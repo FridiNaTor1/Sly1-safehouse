@@ -1,5 +1,32 @@
 #pragma once
 
+// SafeHouse builds this game with CANE_SAFEHOUSE defined and supply their own
+// platform layer as <safehouse/platform.h> (paths, command line and runtime
+// set-up shared with the other games there). The names below are this file's
+// own API mapped onto it, so the game's call sites stay unchanged. Without
+// CANE_SAFEHOUSE the standalone implementation below is used as before.
+#if defined(CANE_SAFEHOUSE)
+#include <safehouse/platform.h>
+
+namespace cane
+{
+inline std::string Utf8(const fs::path& value) { return utf8(value); }
+inline fs::path PathFromUtf8(const std::string& value) { return path(value); }
+inline fs::path ExecutableDirectory() { return executableDirectory(); }
+inline fs::path DataDirectory() { return dataDirectory(); }
+inline fs::path UserDirectory() { return userDirectory(); }
+inline std::vector<std::string> Arguments(int argc, char** argv) { return arguments(argc, argv); }
+inline void ConfigureRuntime(const std::vector<std::string>& args) { configureRuntime(args); }
+inline bool AtomicReplace(const fs::path& temporary, const fs::path& destination)
+{
+    return atomicReplace(temporary, destination);
+}
+inline bool DebugMode() { return debugMode(); }
+inline int CompareInsensitive(const char* left, const char* right) { return compareInsensitive(left, right); }
+}
+
+#else
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -192,4 +219,6 @@ inline int CompareInsensitive(const char* left, const char* right)
 #ifndef _WIN32
 #define _stricmp cane::CompareInsensitive
 #define __debugbreak() raise(SIGTRAP)
+#endif
+
 #endif
