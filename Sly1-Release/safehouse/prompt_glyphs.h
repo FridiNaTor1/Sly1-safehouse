@@ -65,7 +65,8 @@ std::string PromptLabel(JOY_BUTTON button);
 // screen centre, drawn over the frame.
 void DrawPromptStripFixture();
 
-// After the frame's UI, into the scene framebuffer: the test strip.
+// After the frame's UI, into the scene framebuffer: the Controls page (remappage.h)
+// and the test strip.
 void DrawPcInputOverlays();
 
 // (tests) SLY1_SELFTEST=prompts: checks of the glyph mapping, widths and labels.

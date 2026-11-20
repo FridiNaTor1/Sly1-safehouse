@@ -20,6 +20,8 @@
 #include "safehouse/frame.h"
 #include "safehouse/launcher.h"
 #include "safehouse/mouseinput.h"
+#include "safehouse/remappage.h"
+#include <cstdlib>
 #endif
 #include "safehouse/hudbox.h"
 #include <algorithm>
@@ -899,6 +901,11 @@ void SetPromptPrk(PROMPT* pprompt)
 		{
 			if (response == RESPK_ControllerMapping && !gamepadAvailable)
 				continue;
+#if defined(CANE_SAFEHOUSE)
+			// (one Controls page for the keyboard, the mouse and the controller: remappage.h)
+			if (response == RESPK_ControllerMapping)
+				continue;
+#endif
 			prd.arespk[prd.crespk++] = response;
 		}
 	}
@@ -2010,6 +2017,10 @@ void ExecutePrompt(PROMPT* pprompt, int direction)
 			break;
 
 			case RESPK_KeyboardMapping:
+#if defined(CANE_SAFEHOUSE)
+			OpenRemapPage();
+			return;
+#endif
 			s_fControllerBindingCapture = false;
 			OpenMappingPrompt(pprompt, PRK_KeyboardMapping);
 			return;
@@ -2149,6 +2160,11 @@ void HidePrompt(PROMPT* pprompt)
 
 const char* AchzFromRespk(RESPK respk)
 {
+#if defined(CANE_SAFEHOUSE)
+	if (respk == RESPK_KeyboardMapping)
+		return PcText("Controls and Button Icons...", "Commandes et icônes...", "Steuerung und Tastensymbole...",
+			"Controles e iconos...", "Comandi e icone...");
+#endif
 	if (FLocalizedContent())
 	{
 		int variant = 0;
@@ -2393,6 +2409,22 @@ void UpdatePromptActive(PROMPT* pprompt, JOY* pjoy)
 
     if (prk < PRK_PauseMenu || prk >= PRK_Max)
         return;
+
+#if defined(CANE_SAFEHOUSE)
+	// (tests) SLY1_REMAPPAGE=1: the Controls page opens with the first pause menu
+	static bool s_fRemapTest = std::getenv("SLY1_REMAPPAGE") != nullptr;
+	if (s_fRemapTest && prk == PRK_PauseMenu && pprompt->blots == BLOTS_Visible)
+	{
+		s_fRemapTest = false;
+		OpenRemapPage();
+	}
+	// The Controls page has the menu's input while it is open.
+	if (FRemapPageOpen())
+	{
+		UpdateRemapPage(pjoy);
+		return;
+	}
+#endif
 
 	if ((prk == PRK_KeyboardMapping || prk == PRK_ControllerMapping) &&
 		s_iKeyboardBindingCapture >= 0 && g_gl.window != nullptr)

@@ -3,6 +3,8 @@
 #if defined(CANE_SAFEHOUSE)
 // SafeHouse's Sly 2 (promptglyph.cpp).
 #include "prompt_glyphs.h"
+#include "actionbind.h"
+#include "remappage.h"
 #include "../font.h"
 #include "../gl.h"
 #include "pcinput.h"
@@ -98,7 +100,7 @@ Button PromptButtonForGlyph(char ch)
     const JOY_BUTTON button = JoyButtonFromPromptGlyph(ch);
     if (button == BTN_MAX)
         return Button::Count;
-    return cane::input::fromGlfwBinding(g_gamepadBindings[button]);
+    return cane::input::fromGlfwBinding(sly1actions::BindingForButton(button, true));
 }
 
 PROMPTGLYPH PromptGlyphFor(char ch)
@@ -118,7 +120,7 @@ PROMPTGLYPH PromptGlyphFor(char ch)
         const JOY_BUTTON button = JoyButtonFromPromptGlyph(ch);
         if (button == BTN_MAX)
             return glyph;
-        int key = g_keyboardBindings[button];
+        int key = sly1actions::BindingForButton(button, false);
         if (button == BTN_START && key == GLFW_KEY_UNKNOWN)
             key = GLFW_KEY_ESCAPE;   // (Escape is always a second Start)
         const cane::input::IconUV uv = atlas.keyUV(cane::input::promptKeyForBinding(key));
@@ -216,7 +218,7 @@ std::string PromptLabel(JOY_BUTTON button)
         return "Unbound";
 
     if (PromptKeyboardActive())
-        return KeyLabel(g_keyboardBindings[button]);
+        return KeyLabel(sly1actions::BindingForButton(button, false));
 
     if (!PromptSubstituteActive())
     {
@@ -229,7 +231,7 @@ std::string PromptLabel(JOY_BUTTON button)
         return s_apchzPs[button];
     }
 
-    return cane::input::buttonLabel(cane::input::fromGlfwBinding(g_gamepadBindings[button]), PromptFamily());
+    return cane::input::buttonLabel(cane::input::fromGlfwBinding(sly1actions::BindingForButton(button, true)), PromptFamily());
 }
 
 void DrawPromptStripFixture()
@@ -267,6 +269,7 @@ void DrawPromptStripFixture()
 
 void DrawPcInputOverlays()
 {
+    DrawRemapPage();
     static const bool s_fStrip = std::getenv("SLY1_PROMPTSTRIP") != nullptr;
     if (s_fStrip)
         DrawPromptStripFixture();

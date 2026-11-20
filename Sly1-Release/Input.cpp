@@ -15,6 +15,7 @@ float g_controllerDeadzone = 0.35f;
 // SafeHouse: the pads through GLFW and SafeHouse's controller layer (platform/controller_family.h: every pad
 // identified by family for the button icons, Steam Input's virtual pads resolved, the bundled mapping database),
 // the motors through SDL (platform/pad_rumble.h), the mouse through mouseinput.h, the options in pcinput.h.
+#include "safehouse/actionbind.h"
 #include "safehouse/mouseinput.h"
 #include "safehouse/pcinput.h"
 #include "prompt.h"
@@ -554,6 +555,7 @@ bool StartupControllerInput()
     cane::input::tracker().forceFromEnv();
     StartupPromptAtlas();
     ApplyPcInputEnv();
+    sly1actions::Load();
     if (const char* selftest = std::getenv("SLY1_SELFTEST"); selftest != nullptr && std::string(selftest) == "prompts")
     {
         try
@@ -783,6 +785,14 @@ void JOY::Update(GLFWwindow* window)
         gamepadConnected = false;
         hasGamepadState = false;
         InitializeGamepadState(&gamepadState);
+    }
+
+    // Advanced Input Mapping (actionbind.h): the buttons from every action's own binding in the current context.
+    if (sly1actions::Active())
+    {
+        sly1actions::HeldButtons(window, haveGamepadState ? &state : nullptr, fMenu && g_mouseopt.fMenus, current);
+        if (fFocused && FKeyHeld(window, GLFW_KEY_ESCAPE))
+            current[BTN_START] = true;
     }
 
     // Switching pads stops the old one's motors.

@@ -286,7 +286,7 @@ void RunGameFrame()
 #endif
     }
 #if defined(CANE_SAFEHOUSE)
-    DrawPcInputOverlays();   // (prompt_glyphs.h: the icon test strip)
+    DrawPcInputOverlays();   // (prompt_glyphs.h: the Controls page, the icon test strip)
 #endif
 
     if (g_fMsaa)
