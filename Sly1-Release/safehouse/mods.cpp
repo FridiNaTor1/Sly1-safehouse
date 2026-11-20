@@ -2,6 +2,7 @@
 #include "mods.h"
 
 #include "../content.h"
+#include "texmod.h"
 #include "../../platform/platform.h"
 
 #include <algorithm>
@@ -19,8 +20,9 @@ namespace
 {
 fs::path s_modsDirectory;
 // (the options TakeModArguments took, used by StartMods)
-std::string s_modsOption;
-bool s_modsGiven = false;
+std::string s_modsOption, s_ps3Source, s_ps3Out;
+bool s_modsGiven = false, s_ps3Png = false;
+fs::path s_dumpTextures;
 std::once_flag s_indexOnce;
 // lower-case generic relative path -> the mod file
 std::unordered_map<std::string, fs::path> s_index;
@@ -148,6 +150,14 @@ void TakeModArguments(std::vector<std::string>& args)
             return args[i];
         };
         if (option == "--mods") { s_modsOption = value(); s_modsGiven = true; }
+        else if (option == "--texture-pack") SetTexturePackDirectory(cane::path(value()));
+        else if (option == "--dump-textures") s_dumpTextures = cane::path(value());
+        else if (option == "--ps3-hd-textures")
+        {
+            s_ps3Source = value();
+            s_ps3Out = value();
+        }
+        else if (option == "--ps3-hd-png") s_ps3Png = true;
         else rest.push_back(option);
     }
     args = std::move(rest);
@@ -158,5 +168,7 @@ int StartMods()
     if (s_modsGiven) SetModsDirectory(cane::path(s_modsOption));
     else if (const char* env = std::getenv("SLY1_MODS")) SetModsDirectory(cane::path(env));
     else SetModsDirectory(cane::userDirectory() / "Mods");
+    if (!s_ps3Out.empty()) return Ps3HdTexturesCommand(cane::dataDirectory(), s_ps3Source, s_ps3Out, s_ps3Png);
+    if (!s_dumpTextures.empty()) SetTextureDumpDirectory(s_dumpTextures);
     return -1;
 }

@@ -1,11 +1,12 @@
 #pragma once
 
 // Sly 1's Mods folder (SafeHouse's docs/MODDING.md, "Sly 1"): a file in <mods>/<path> replaces the installed file at
-// the same path below the installation folder (the folder holding extraction_manifest.json).
+// the same path below the installation folder (the folder holding extraction_manifest.json). Textures (mods/Textures)
+// have their own loader (texmod.h).
 //
 // The mods folder is --mods DIR, else $SLY1_MODS, else <user dir>/Mods. An empty value turns mods off.
 //
-// SafeHouse builds only (CANE_SAFEHOUSE: mods.cpp is SafeHouse's source, cmake/sly1.cmake).
+// SafeHouse builds only (CANE_SAFEHOUSE: mods.cpp, texmod.cpp, ps3hd.cpp are SafeHouse's sources, cmake/sly1.cmake).
 // Elsewhere ModPath is the installed file itself and the rest is absent, so the game's call sites need no #if.
 
 #include <cstdint>
@@ -18,6 +19,10 @@ inline std::filesystem::path ModPath(const std::filesystem::path& installed) { r
 #else
 // The mods' command-line options taken out of args before the runtime reads the rest (cane::ConfigureRuntime):
 //   --mods DIR                     the mods folder
+//   --texture-pack DIR             a texture pack under the mods folder's textures (texmod.h; the PS3 HD pack)
+//   --dump-textures DIR            every texture the game loads written to DIR as a PNG of its mods name
+//   --ps3-hd-textures SOURCE OUT   (a tool: no game) the PS3 HD texture pack built from The Sly Collection (ps3hd.cpp);
+//   --ps3-hd-png                   with it: as PNG files instead of Textures.pak
 void TakeModArguments(std::vector<std::string>& args);
 // Once the runtime knows its folders and the installation (RefreshContentPackage): the mods folder set. Runs the tool
 // an option asked for and returns its exit code; -1: play.

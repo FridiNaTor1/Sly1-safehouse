@@ -1,4 +1,5 @@
 #include "shd.h"
+#include "safehouse/texmod.h"
 #include "upscale.h"
 #include "sensor.h"
 #include "runtime_error.h"
@@ -443,6 +444,12 @@ void LoadTexturesFromBrx(CBinaryInputStream* pbis)
 
         dataEnd = std::max(dataEnd, dataStart + image.baseOffset + image.cbPixels);
 
+        // A texture mod or texture pack (texmod.h, SafeHouse): its PNG uploaded as RGBA8 in place of the image.
+        std::vector<uint8_t> replacement;
+        uint32_t replacementWidth = 0;
+        uint32_t replacementHeight = 0;
+        const bool replaced = FTextureReplacement(image, replacement, replacementWidth, replacementHeight);
+
         glGenTextures(1, &image.glDiffuseMap);
         glBindTexture(GL_TEXTURE_2D, image.glDiffuseMap);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -451,6 +458,31 @@ void LoadTexturesFromBrx(CBinaryInputStream* pbis)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
             (image.textureFlags & 2) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
         const bool generateMipmaps = (image.textureFlags & kGenerateMipmaps) != 0;
+        if (replaced)
+        {
+            uint32_t replacementMips = 1;
+            if (generateMipmaps)
+                for (uint32_t dimension = std::max(replacementWidth, replacementHeight); dimension > 1; dimension >>= 1)
+                    ++replacementMips;
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                replacementMips > 1
+                    ? (g_textureFiltering != 0 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR_MIPMAP_NEAREST)
+                    : GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            ApplyAnisotropyToBoundTexture();
+            glTexStorage2D(GL_TEXTURE_2D, replacementMips, GL_RGBA8, replacementWidth, replacementHeight);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, replacementWidth, replacementHeight,
+                GL_RGBA, GL_UNSIGNED_BYTE, replacement.data());
+            if (replacementMips > 1)
+                glGenerateMipmap(GL_TEXTURE_2D);
+            ReportTextureGlErrors("texture mod", imageIndex, image);
+            if (!g_fDeveloperDebugMode)
+            {
+                image.diffuseTexture.clear();
+                image.diffuseTexture.shrink_to_fit();
+            }
+            continue;
+        }
         uint32_t storageMipCount = image.mipCount;
         if (generateMipmaps)
         {
@@ -542,6 +574,7 @@ void LoadTexturesFromBrx(CBinaryInputStream* pbis)
         }
     }
 
+    ReportTextureMods();
     pbis->Seek(dataEnd);
 }
 
