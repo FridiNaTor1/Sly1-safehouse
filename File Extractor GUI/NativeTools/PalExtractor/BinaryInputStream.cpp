@@ -5,6 +5,7 @@
 #include <limits>
 #include <stdexcept>
 
+namespace cane::pal {
 namespace {
 std::string Utf8FromCodePoint(std::uint32_t cp) {
     std::string out;
@@ -28,39 +29,42 @@ std::string Utf8FromCodePoint(std::uint32_t cp) {
 
 CBinaryInputStream::CBinaryInputStream(const std::filesystem::path& path,
     StringEncoding encoding) : encoding_(encoding) {
-    file_.open(path, std::ios::binary);
-    if (!file_) throw std::runtime_error("Could not open: " + path.string());
-    file_.seekg(0, std::ios::end);
-    const auto end = file_.tellg();
-    if (end < 0) throw std::runtime_error("Could not determine file size");
-    size_ = static_cast<std::size_t>(end);
-    file_.seekg(0, std::ios::beg);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) throw std::runtime_error("Could not open: " + path.string());
+    const auto end = file.tellg();
+    if (end < 0 || static_cast<std::uintmax_t>(end) > std::numeric_limits<std::size_t>::max())
+        throw std::runtime_error("Could not determine file size");
+    storage_.resize(static_cast<std::size_t>(end));
+    file.seekg(0);
+    if (!storage_.empty() && !file.read(reinterpret_cast<char*>(storage_.data()), storage_.size()))
+        throw std::runtime_error("Read failed");
+    data_ = storage_;
 }
+
+CBinaryInputStream::CBinaryInputStream(std::span<const std::uint8_t> data,
+    StringEncoding encoding) : data_(data), encoding_(encoding) {}
 
 void CBinaryInputStream::ReadBytes(void* destination, std::size_t size) {
     if (size > Remaining()) throw std::runtime_error("Unexpected EOF at 0x" + std::to_string(GetOffset()));
-    file_.read(static_cast<char*>(destination), static_cast<std::streamsize>(size));
-    if (!file_) throw std::runtime_error("Read failed");
+    if (size) std::memcpy(destination, data_.data() + offset_, size);
+    offset_ += size;
 }
 
-void CBinaryInputStream::Skip(std::size_t size) { Seek(GetOffset() + size); }
+void CBinaryInputStream::Skip(std::size_t size) {
+    if (size > Remaining()) throw std::runtime_error("Seek past EOF");
+    offset_ += size;
+}
 void CBinaryInputStream::Align(std::size_t alignment) {
     if (alignment < 2) return;
-    const auto p = GetOffset();
-    Seek((p + alignment - 1) / alignment * alignment);
+    const auto padding = (alignment - offset_ % alignment) % alignment;
+    Skip(padding);
 }
 void CBinaryInputStream::Seek(std::size_t offset) {
-    if (offset > size_) throw std::runtime_error("Seek past EOF");
-    file_.clear();
-    file_.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
-    if (!file_) throw std::runtime_error("Seek failed");
+    if (offset > data_.size()) throw std::runtime_error("Seek past EOF");
+    offset_ = offset;
 }
-std::size_t CBinaryInputStream::GetOffset() const {
-    const auto p = file_.tellg();
-    if (p < 0) throw std::runtime_error("tellg failed");
-    return static_cast<std::size_t>(p);
-}
-std::size_t CBinaryInputStream::Remaining() const { return size_ - GetOffset(); }
+std::size_t CBinaryInputStream::GetOffset() const { return offset_; }
+std::size_t CBinaryInputStream::Remaining() const { return data_.size() - offset_; }
 
 #define READ_SCALAR(name, type) type CBinaryInputStream::name() { type v{}; ReadBytes(&v, sizeof(v)); return v; }
 READ_SCALAR(U8Read, std::uint8_t)
@@ -106,12 +110,18 @@ bool CBinaryInputStream::LooksLikeUtf16(std::uint16_t length) {
     if (!length || static_cast<std::size_t>(length) * 2 > Remaining()) return false;
     const auto saved = GetOffset();
     const auto sample = std::min<std::size_t>(length, 16);
-    std::size_t zeroHigh = 0;
+    std::size_t zeroHigh = 0, hangul = 0, other = 0;
     for (std::size_t i = 0; i < sample; ++i) {
         const auto c = U16Read();
         if ((c & 0xff00u) == 0 && (c & 0xffu) >= 0x20) ++zeroHigh;
+        // SafeHouse addition for the Korean disc (SCKA_200.04): Hangul syllables (and CJK / full-width
+        // punctuation beside them) can never be two narrow ASCII bytes, so a string made only of those and
+        // printable Latin-1 units is UTF-16. Latin-only text keeps upstream's rule.
+        else if (c >= 0xAC00u && c <= 0xD7A3u) ++hangul;
+        else if (!((c >= 0x3000u && c <= 0x303Fu) || (c >= 0xFF00u && c <= 0xFFEFu) || c == 0x0Au || c == 0x0Du)) ++other;
     }
     Seek(saved);
+    if (hangul && !other) return true;
     return sample >= 2 && zeroHigh * 4 >= sample * 3;
 }
 
@@ -133,3 +143,5 @@ std::string CBinaryInputStream::ReadFixedString32() {
     const auto end = std::find(std::begin(text), std::end(text), '\0');
     return std::string(text, end);
 }
+
+} // namespace cane::pal
