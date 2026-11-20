@@ -22,3 +22,7 @@ bool ShSaveSystemSettings(const VIDEOSAVESETTINGS& settings);
 // SaveSystemSettings().
 const cane::settings::Sly1Settings& ShSettings();
 cane::settings::Sly1Settings& ShSettingsMutable();
+
+// Settings.ini's [Graphics] Renderer, read before the window exists (gl.cpp: 0 Auto, 1 Vulkan, 2 OpenGL; Auto without
+// a file).
+int ShRendererSetting();

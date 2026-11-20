@@ -186,3 +186,11 @@ bool ShSaveSystemSettings(const VIDEOSAVESETTINGS& settings)
 
 const cane::settings::Sly1Settings& ShSettings() { return s_model; }
 cane::settings::Sly1Settings& ShSettingsMutable() { return s_model; }
+
+int ShRendererSetting()
+{
+	st::Sly1Settings s = st::sly1Defaults();
+	if (st::loadSly1(cane::userDirectory(), s) == st::Sly2Load::Missing)
+		return 0;
+	return (std::clamp)(s.system.renderer, 0, 2);
+}

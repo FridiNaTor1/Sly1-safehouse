@@ -8,6 +8,7 @@
 #include "runtime_error.h"
 #if defined(CANE_SAFEHOUSE)
 #include <safehouse/render/imgui_gl.h>
+#include "safehouse/settings.h"
 #endif
 #if defined(__SWITCH2__)
 #include "clock.h"   // (g_targetFrameRate)
@@ -160,6 +161,7 @@ void GL::InitGL()
 	{
 		static const char* const kprograms[][2] = { { "glob.vert", "glob.frag" }, { "screen.vert", "screen.frag" },
 			{ "blot.vert", "blot.frag" }, { "celborder.vert", "celborder.frag" } };
+		g_rendererChoice = ShRendererSetting();
 		cane::vkgame::Config config;
 		config.envRenderer = "SLY1_RENDERER";
 		config.programs = kprograms;
