@@ -414,7 +414,7 @@ namespace
 #if defined(CANE_SAFEHOUSE)
         ShDrawMovieSkip();
 #endif
-        glfwSwapBuffers(g_gl.window);
+        cane::gl::SwapBuffers(g_gl.window);
         return true;
     }
 

@@ -495,7 +495,7 @@ void RenderMenuGui(SW* psw)
             if (ImGui::MenuItem("V Sync", nullptr, g_fVsync))
             {
                 g_fVsync = !g_fVsync;
-                glfwSwapInterval(g_fVsync ? 1 : 0);
+                cane::gl::SwapInterval(g_fVsync ? 1 : 0);
             }
 
             if (ImGui::BeginMenu("Frame Rate"))

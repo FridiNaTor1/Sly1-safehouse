@@ -317,7 +317,7 @@ void RunGameFrame()
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
-    glfwSwapBuffers(g_gl.window);
+    cane::gl::SwapBuffers(g_gl.window);
 #if defined(CANE_SAFEHOUSE)
     // (the cap and VSync as SafeHouse's other games: safehouse/frame.h)
     ShFrameEnd();
@@ -677,7 +677,7 @@ void Startup()
 	LoadDebugModeSetting();
     g_gl.InitGL();
     StartupControllerInput();
-    glfwSwapInterval(g_fVsync ? 1 : 0);
+    cane::gl::SwapInterval(g_fVsync ? 1 : 0);
 
     std::cout << "Sly Cooper 2002 Sony Computer Entertainment America & Sucker Punch Productions\n";
     SetPhase(PHASE_Startup);

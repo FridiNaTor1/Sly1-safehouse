@@ -1519,7 +1519,7 @@ void ExecutePrompt(PROMPT* pprompt, int direction)
 			ApplyWindowModeSettings(WindowMode_Windowed);
 			ApplyAspectRatioSettings(FitToScreen);
 			ApplyMsaaSettings();
-			glfwSwapInterval(1);
+			cane::gl::SwapInterval(1);
 			glGlobShader.Use();
 			glUniform1i(glslFogType, g_fogType);
 			SaveSystemSettings();
@@ -1548,7 +1548,7 @@ void ExecutePrompt(PROMPT* pprompt, int direction)
 
             case RESPK_Vsync:
             g_fVsync = !g_fVsync;
-            glfwSwapInterval(g_fVsync ? 1 : 0);
+            cane::gl::SwapInterval(g_fVsync ? 1 : 0);
             SaveSystemSettings();
             rebuildPromptKeepingSelection();
             return;

@@ -121,7 +121,7 @@ void GL::InitGL()
 {
 	// Create GLFW context and window
 	glfwSetErrorCallback(GlfwErrorCallback);
-	if (glfwInit() != GLFW_TRUE)
+	if (!cane::initGlfw())
 		throw std::runtime_error("GLFW could not initialize. See the diagnostic console for details.");
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -162,14 +162,14 @@ void GL::InitGL()
 			"The game window could not be created. Update the graphics driver and verify OpenGL 4.3 support.");
 	}
 
-	glfwMakeContextCurrent(window);
+	cane::gl::CreateContext(window, nullptr);
 	glfwSetFramebufferSizeCallback(window, FrameBufferSizeCallBack);
 	glfwSetWindowFocusCallback(window, WindowFocusCallback);
 	glfwSetCursorPosCallback(window, MOUSE::CursorPosCallback);
 	glfwSetMouseButtonCallback(window, MOUSE::MouseButtonCallback);
 	glfwSetScrollCallback(window, MOUSE::MouseWheelCallback);
 
-	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+	if (!gladLoadGLLoader((GLADloadproc)cane::gl::ProcAddress))
 	{
 		ReportRuntimeError("Graphics",
 			"GLAD could not load the required OpenGL functions. Update the graphics driver and verify OpenGL 4.3 support.");
@@ -822,6 +822,7 @@ void GL::TerminateGL()
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
+	cane::gl::DestroyContext(window);
 	glfwDestroyWindow(window);
 	glfwTerminate();
 }
@@ -865,11 +866,12 @@ bool FBufferStorageAvailable()
 	if (s_bufferStorageState < 0)
 	{
 		s_bufferStorageState = 0;
+		// (asked of the context only while there is one: another renderer behind the GL calls has none)
 		const bool fSupported = GLVersion.major > 4 || (GLVersion.major == 4 && GLVersion.minor >= 4) ||
-			glfwExtensionSupported("GL_ARB_buffer_storage");
+			(glfwGetCurrentContext() != nullptr && glfwExtensionSupported("GL_ARB_buffer_storage"));
 		if (fSupported)
 		{
-			s_pfnBufferStorage = reinterpret_cast<PFNCANEBUFFERSTORAGEPROC>(glfwGetProcAddress("glBufferStorage"));
+			s_pfnBufferStorage = reinterpret_cast<PFNCANEBUFFERSTORAGEPROC>(cane::gl::ProcAddress("glBufferStorage"));
 			if (s_pfnBufferStorage != nullptr)
 				s_bufferStorageState = 1;
 		}
@@ -1266,7 +1268,7 @@ bool ApplyWindowModeSettings(WindowMode mode)
 		return false;
 
 	g_windowMode = mode;
-	glfwSwapInterval(g_fVsync ? 1 : 0);
+	cane::gl::SwapInterval(g_fVsync ? 1 : 0);
 	return true;
 }
 

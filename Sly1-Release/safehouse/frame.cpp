@@ -89,7 +89,7 @@ void UpdateSwap()
 			fPaces = true;
 		}
 	}
-	glfwSwapInterval(interval);
+	cane::gl::SwapInterval(interval);   // (the seam: Vulkan too, gl.h)
 	s_swap.interval = interval;
 	s_swap.fPaces = fPaces;
 	++s_swap.generation;

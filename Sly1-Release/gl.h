@@ -15,6 +15,27 @@
 #include "mouse.h"
 #include <vector>
 
+// The window's context, its swap interval and its frames go through one seam, so the platform can put another
+// renderer behind the GL calls: SafeHouse's <safehouse/gl_context.h> (OpenGL, Vulkan through its GL layer, DXGI
+// presentation on Windows). Without it, GLFW's own calls.
+#if defined(CANE_SAFEHOUSE)
+#include <safehouse/gl_context.h>
+#include <safehouse/glfw_platform.h>
+#else
+namespace cane
+{
+inline bool initGlfw() { return glfwInit() == GLFW_TRUE; }
+namespace gl
+{
+inline bool CreateContext(GLFWwindow* window, std::string*) { glfwMakeContextCurrent(window); return true; }
+inline void DestroyContext(GLFWwindow*) {}
+inline GLFWglproc ProcAddress(const char* name) { return glfwGetProcAddress(name); }
+inline void SwapInterval(int interval) { glfwSwapInterval(interval); }
+inline void SwapBuffers(GLFWwindow* window) { glfwSwapBuffers(window); }
+}
+}
+#endif
+
 enum AspectMode
 {
 	FitToScreen,

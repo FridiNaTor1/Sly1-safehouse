@@ -545,7 +545,7 @@ void ApplySavedVideoSettings(VIDEOSAVESETTINGS settings)
         ApplyInternalResolutionSettings();
     }
     ApplyMsaaSettings();
-    glfwSwapInterval(g_fVsync ? 1 : 0);
+    cane::gl::SwapInterval(g_fVsync ? 1 : 0);
 
     glGlobShader.Use();
     glUniform1i(glslFogType, g_fogType);
