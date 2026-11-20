@@ -23,13 +23,13 @@ extern bool g_fAutoCameraRotation;
 // applies when on). Defined in Input.cpp.
 extern bool g_fControllerVibration;
 
-// The bindings and options from / to the shared settings record (keyboard and gamepad bindings, camera keys,
-// mouse, icons, dead zone, unfocused pad, auto camera).
+// These options from / to the shared settings record (Settings.ini: safehouse/settings.h). The 16 bindings, the mouse
+// camera and its sensitivity, the dead zone and the unfocused pad go through upstream's VIDEOSAVESETTINGS.
 void PcInputFromSettings(const cane::settings::SystemSettings& settings);
 void PcInputToSettings(cane::settings::SystemSettings& settings);
 
-// The settings layer's save (Settings.ini): set by whoever owns the settings file. Without it the Controls
-// page saves through upstream's SaveSystemSettings (save.cpp).
+// The Controls page's save: these options into Settings.ini's record, then SaveSystemSettings (save.cpp). (A test or
+// another front end may set g_pfnPcInputSave instead.)
 extern void (*g_pfnPcInputSave)();
 void PcInputSave();
 

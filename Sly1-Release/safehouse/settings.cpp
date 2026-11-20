@@ -1,5 +1,6 @@
 // See settings.h.
 #include "settings.h"
+#include "pcinput.h"
 #include "../save.h"
 #include "../Input.h"
 #include "../gl.h"
@@ -46,7 +47,7 @@ int KeyToGame(int key)
 {
 	if (key >= st::kMouseBindingBase && key < st::kMouseBindingBase + st::kMouseButtonCount)
 		return MouseBindingFromButton(key - st::kMouseBindingBase);
-	if (st::mouseBinding(key)) return GLFW_KEY_UNKNOWN;   // (the wheel: none in this game)
+	if (st::mouseBinding(key)) return FMouseBinding(key) ? key : GLFW_KEY_UNKNOWN;   // (the wheel: Input.h's codes are SafeHouse's)
 	return key;
 }
 int KeyFromGame(int key)
@@ -154,6 +155,7 @@ bool ShLoadSystemSettings(VIDEOSAVESETTINGS* settings)
 	std::printf("settings: %s (%s)\n", cane::utf8(st::sly1SettingsPath(userDir)).c_str(),
 		result == st::Sly2Load::Ok ? "read" : result == st::Sly2Load::Migrated ? "made from Saves/system_settings.dat" :
 		result == st::Sly2Load::Missing ? "new" : "unreadable: not written this run");
+	PcInputFromSettings(s_model.system);   // (the input options beside VIDEOSAVESETTINGS: pcinput.h)
 	if (result == st::Sly2Load::Missing)
 		return false;
 	*settings = ToGame(s_model);

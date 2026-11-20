@@ -5,6 +5,7 @@
 #include "../Input.h"
 #include "mouseinput.h"
 #include "../save.h"
+#include "settings.h"
 #include <safehouse/controller_family.h>
 #include <safehouse/system_settings.h>
 
@@ -21,20 +22,12 @@ namespace st = cane::settings;
 
 void PcInputFromSettings(const st::SystemSettings& s)
 {
-    for (int button = 0; button < BTN_MAX; ++button)
-    {
-        g_keyboardBindings[button] = s.keyboardBindings[button];
-        g_gamepadBindings[button] = s.gamepadBindings[button];
-    }
     for (int i = 0; i < st::kCameraKeyCount; ++i)
         g_cameraKeyBindings[i] = s.cameraKeyBindings[i];
-    g_fDisableControllerInputWhenUnfocused = s.disableControllerInputWhenUnfocused != 0;
     g_promptStyle = std::clamp(s.promptStyle, 0, cane::input::kPromptStyleLast);
     g_fAlwaysOriginalPsLayout = s.alwaysOriginalPsPrompts != 0;
     g_fAutoCameraRotation = s.autoCameraRotation != 0;
     g_fControllerVibration = s.controllerVibration != 0;
-    g_fMouseCamera = s.mouseCamera != 0;
-    g_mouseCameraSensitivity = std::clamp(s.mouseSensitivity, 10, 500) / 100.0f;
     g_mouseopt.aimSensitivity = std::clamp(s.mouseAimSensitivity, 10, 500);
     g_mouseopt.fInvertX = s.mouseInvertX != 0;
     g_mouseopt.fInvertY = s.mouseInvertY != 0;
@@ -42,24 +35,17 @@ void PcInputFromSettings(const st::SystemSettings& s)
     g_mouseopt.fWheelZoom = s.mouseWheelZoom != 0;
     g_mouseopt.fMenus = s.mouseMenus != 0;
     ApplyMouseOptions();
+    ApplyPcInputEnv();   // (the test switches stay over the file's values)
 }
 
 void PcInputToSettings(st::SystemSettings& s)
 {
-    for (int button = 0; button < BTN_MAX; ++button)
-    {
-        s.keyboardBindings[button] = g_keyboardBindings[button];
-        s.gamepadBindings[button] = g_gamepadBindings[button];
-    }
     for (int i = 0; i < st::kCameraKeyCount; ++i)
         s.cameraKeyBindings[i] = g_cameraKeyBindings[i];
-    s.disableControllerInputWhenUnfocused = g_fDisableControllerInputWhenUnfocused ? 1 : 0;
     s.promptStyle = g_promptStyle;
     s.alwaysOriginalPsPrompts = g_fAlwaysOriginalPsLayout ? 1 : 0;
     s.autoCameraRotation = g_fAutoCameraRotation ? 1 : 0;
     s.controllerVibration = g_fControllerVibration ? 1 : 0;
-    s.mouseCamera = g_fMouseCamera ? 1 : 0;
-    s.mouseSensitivity = std::clamp(static_cast<int>(g_mouseCameraSensitivity * 100.0f + 0.5f), 10, 500);
     s.mouseAimSensitivity = g_mouseopt.aimSensitivity;
     s.mouseInvertX = g_mouseopt.fInvertX ? 1 : 0;
     s.mouseInvertY = g_mouseopt.fInvertY ? 1 : 0;
@@ -71,9 +57,14 @@ void PcInputToSettings(st::SystemSettings& s)
 void PcInputSave()
 {
     if (g_pfnPcInputSave != nullptr)
+    {
         g_pfnPcInputSave();
-    else
-        SaveSystemSettings();
+        return;
+    }
+    // (Settings.ini, safehouse/settings.h: these options into the file's record, upstream's own through
+    // SaveSystemSettings' VIDEOSAVESETTINGS)
+    PcInputToSettings(ShSettingsMutable().system);
+    SaveSystemSettings();
 }
 
 void ApplyPcInputEnv()
