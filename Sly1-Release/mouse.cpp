@@ -70,8 +70,9 @@ void MOUSE::MouseButtonCallback(GLFWwindow* window, int button, int action, int 
 
 // scroll wheel moved
 void MOUSE::MouseWheelCallback(GLFWwindow* window, double dx, double dy) {
-    scrollDx = dx;
-    scrollDy = dy;
+    // Accumulate: several wheel events can arrive between two reads.
+    scrollDx += dx;
+    scrollDy += dy;
 }
 
 /*
