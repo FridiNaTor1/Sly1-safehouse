@@ -18,6 +18,7 @@
 #include "content.h"
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/frame.h"
+#include "safehouse/launcher.h"
 #endif
 #include <algorithm>
 #include <cmath>
@@ -2092,7 +2093,13 @@ const char* AchzFromRespk(RESPK respk)
 		case RESPK_ControllerMapping: return PcText("Controller Mapping...", "Configuration de la manette...", "Controllerbelegung...", "Asignación del mando...", "Configurazione controller...");
 		case RESPK_ResetVideo: return PcText("Reset Video Settings", "Réinitialiser les paramètres vidéo", "Videoeinstellungen zurücksetzen", "Restablecer ajustes de vídeo", "Ripristina impostazioni video");
 		case RESPK_ResetMappings: return PcText("Reset Mappings", "Réinitialiser les commandes", "Belegung zurücksetzen", "Restablecer asignaciones", "Ripristina configurazione");
-		case RESPK_ExitToDesktop: return PcText("Exit to Desktop", "Quitter vers le bureau", "Zum Desktop beenden", "Salir al escritorio", "Esci al desktop");
+		case RESPK_ExitToDesktop:
+#if defined(CANE_SAFEHOUSE)
+			// (the Collection Style Launcher's Quit to Launcher: safehouse/launcher.h)
+			if (const char* pchz = PchzShExitLabel())
+				return pchz;
+#endif
+			return PcText("Exit to Desktop", "Quitter vers le bureau", "Zum Desktop beenden", "Salir al escritorio", "Esci al desktop");
 		default: break;
 		}
 	}

@@ -1,4 +1,7 @@
 #include "runtime_error.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/launcher.h"
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -57,6 +60,14 @@ void EnsureRuntimeErrorConsole()
 	if (s_consoleInitialized)
 		return;
 	#ifdef _WIN32
+#if defined(CANE_SAFEHOUSE)
+	// (output already going to the launcher, a pipe or a file: it stays there, no console of the game's own)
+	if (FShOutputRedirected())
+	{
+		s_consoleInitialized = true;
+		return;
+	}
+#endif
 	if (GetConsoleWindow() == nullptr && AllocConsole() == FALSE)
 		return;
 
@@ -111,6 +122,11 @@ void ReportRuntimeError(const char* subsystem, const char* format, ...)
 void ReportFatalRuntimeError(const char* message)
 {
 	ReportRuntimeError("Fatal", "%s", message != nullptr ? message : "Unknown fatal error");
+#if defined(CANE_SAFEHOUSE)
+	// (the launcher shows the error from the game's output)
+	if (FShOutputRedirected())
+		return;
+#endif
 	#ifdef _WIN32
 	MessageBoxW(nullptr,
 		L"ProjectCane could not continue.\n\n"
@@ -121,6 +137,11 @@ void ReportFatalRuntimeError(const char* message)
 
 void InstallRuntimeErrorHandlers()
 {
+#if defined(CANE_SAFEHOUSE)
+	// SafeHouse's crash and hang reports, shared by its programs (safehouse/launcher.h)
+	ShInstallCrashHandlers();
+	return;
+#endif
 	#ifdef _WIN32
 	SetUnhandledExceptionFilter(RuntimeUnhandledExceptionFilter);
 	#else

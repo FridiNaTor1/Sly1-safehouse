@@ -8,6 +8,9 @@
 #if defined(CANE_SAFEHOUSE)
 #include <safehouse/platform.h>
 
+// The command line with SafeHouse's own options (Sly1-Release/safehouse/launcher.h).
+void ShConfigureRuntime(const std::vector<std::string>& args);
+
 namespace cane
 {
 inline std::string Utf8(const fs::path& value) { return utf8(value); }
@@ -16,7 +19,7 @@ inline fs::path ExecutableDirectory() { return executableDirectory(); }
 inline fs::path DataDirectory() { return dataDirectory(); }
 inline fs::path UserDirectory() { return userDirectory(); }
 inline std::vector<std::string> Arguments(int argc, char** argv) { return arguments(argc, argv); }
-inline void ConfigureRuntime(const std::vector<std::string>& args) { configureRuntime(args); }
+inline void ConfigureRuntime(const std::vector<std::string>& args) { ShConfigureRuntime(args); }
 inline bool AtomicReplace(const fs::path& temporary, const fs::path& destination)
 {
     return atomicReplace(temporary, destination);

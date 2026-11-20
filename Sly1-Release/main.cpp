@@ -18,6 +18,7 @@
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/frame.h"
 #include "safehouse/skipcut.h"
+#include "safehouse/launcher.h"
 #endif
 #include <atomic>
 #include <chrono>
@@ -178,6 +179,7 @@ void RunGameFrame()
 		FlushTransitionFrame();
 		g_transition.Execute(file);
 #if defined(CANE_SAFEHOUSE)
+		ShNoteLevel();
 		ShFrameResync();
 #else
 		if (s_framePacer != nullptr)
@@ -324,6 +326,9 @@ void RunGameFrame()
 #endif
 
     ++g_cframe;
+#if defined(CANE_SAFEHOUSE)
+    ShNoteFrame(static_cast<long>(g_cframe));
+#endif
     s_runningFrame = false;
 }
 
