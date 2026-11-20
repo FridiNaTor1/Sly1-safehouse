@@ -3,6 +3,7 @@
 #include "safehouse/skipcut.h"
 #endif
 #include <chrono>
+#include <cstdlib>
 
 void StartupClock()
 {
@@ -53,6 +54,15 @@ void MarkClockTick(CLOCK* pclock)
     if (const float dtFixed = ShClockFixedStep(); dtFixed > 0.0f)
         dt = dtFixed;
 #endif
+
+    // Test runs: SLY1_FIXED_DT=SECONDS steps every frame by that much, whatever the host's time, so two runs (two
+    // renderers, two builds) show the same game state on the same frame.
+    static const float s_dtFixed = [] {
+        const char* value = std::getenv("SLY1_FIXED_DT");
+        return value != nullptr ? static_cast<float>(std::atof(value)) : 0.0f;
+    }();
+    if (s_dtFixed > 0.0f)
+        dt = s_dtFixed;
 
     // Keep the engine's minimum update step synchronized with the selected
     // presentation rate (30, 60, or 120 Hz).
