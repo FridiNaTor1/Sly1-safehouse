@@ -16,7 +16,7 @@
 #include "content.h"
 #include "../platform/platform.h"
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #include <mmsystem.h>
 #include <xaudio2.h>
 #include <xaudio2fx.h>

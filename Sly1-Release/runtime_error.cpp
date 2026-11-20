@@ -1,7 +1,7 @@
 #include "runtime_error.h"
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #else
 #include <csignal>
 #include <ctime>

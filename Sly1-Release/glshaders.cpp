@@ -11,7 +11,7 @@ GLuint s_activeShaderProgram = (std::numeric_limits<GLuint>::max)();
 #include "embedded_shaders.h"
 #endif
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #endif
 #include <algorithm>
 #include <cstdio>
