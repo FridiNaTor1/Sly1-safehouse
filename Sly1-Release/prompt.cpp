@@ -16,6 +16,9 @@
 #include "debug.h"
 #include "Input.h"
 #include "content.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/frame.h"
+#endif
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -414,6 +417,10 @@ std::vector<int> SupportedFrameRates()
     // and made it appear broken.  Keep the universally useful caps available
     // and supplement them with the monitor's reported refresh rates.
     std::vector<int> frameRates{ 30, 60 };
+#if defined(CANE_SAFEHOUSE)
+    // (the rates of SafeHouse's other games and Uncapped: safehouse/frame.h)
+    frameRates.insert(frameRates.end(), { 90, 120, 144, 240, SH_FRAMERATE_UNCAPPED });
+#endif
     GLFWmonitor* monitor = ActiveMonitor();
 
     if (monitor != nullptr)
@@ -869,6 +876,12 @@ void SetPromptPrk(PROMPT* pprompt)
         std::snprintf(g_achzRespk27, sizeof(g_achzRespk27), "MSAA: %s", PcOnOff(false));
     std::snprintf(g_achzRespk28, sizeof(g_achzRespk28),
 		"%s: %d FPS", PcText("Frame Rate", "Fréquence d'images", "Bildrate", "Frecuencia de imagen", "Frequenza fotogrammi"), g_targetFrameRate);
+#if defined(CANE_SAFEHOUSE)
+	if (ShFrameRateUncapped(g_targetFrameRate))
+		std::snprintf(g_achzRespk28, sizeof(g_achzRespk28), "%s: %s",
+			PcText("Frame Rate", "Fréquence d'images", "Bildrate", "Frecuencia de imagen", "Frequenza fotogrammi"),
+			PcText("Uncapped", "Illimitée", "Unbegrenzt", "Sin límite", "Illimitato"));
+#endif
     if (g_internalResolutionHeight == 0 && g_resolutionScalePercent != 100)
 	{
 		std::snprintf(g_achzRespk30, sizeof(g_achzRespk30),

@@ -15,6 +15,9 @@
 #include "blip.h"
 #include "content.h"
 #include "../platform/platform.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/frame.h"
+#endif
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -173,8 +176,12 @@ void RunGameFrame()
     {
 		FlushTransitionFrame();
 		g_transition.Execute(file);
+#if defined(CANE_SAFEHOUSE)
+		ShFrameResync();
+#else
 		if (s_framePacer != nullptr)
 			s_framePacer->Resync();
+#endif
     }
 
     if (FCutscenePending() && g_wipe.wipes != WIPES_WipingOut)
@@ -271,8 +278,13 @@ void RunGameFrame()
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
     glfwSwapBuffers(g_gl.window);
+#if defined(CANE_SAFEHOUSE)
+    // (the cap and VSync as SafeHouse's other games: safehouse/frame.h)
+    ShFrameEnd();
+#else
     if (s_framePacer != nullptr)
         s_framePacer->Wait();
+#endif
 
     ++g_cframe;
     s_runningFrame = false;
