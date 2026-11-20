@@ -77,6 +77,15 @@ void main()
 		if (shadowAlphaProgram != 0)
 			return true;
 
+		if (FRendererVulkan())
+		{
+			// (compiled at build time, from shadowalpha.vert / .frag)
+			shadowAlphaProgram = cane::vkgame::Program("shadowalpha.vert", nullptr, "shadowalpha.frag");
+			if (shadowAlphaProgram != 0 && shadowAlphaVao == 0)
+				glGenVertexArrays(1, &shadowAlphaVao);
+			return shadowAlphaProgram != 0;
+		}
+
 		const GLuint vertexShader = CompileShadowAlphaShader(GL_VERTEX_SHADER, kShadowAlphaVertexSource);
 		const GLuint fragmentShader = CompileShadowAlphaShader(GL_FRAGMENT_SHADER, kShadowAlphaFragmentSource);
 		if (vertexShader == 0 || fragmentShader == 0)

@@ -315,7 +315,7 @@ void RunGameFrame()
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
         ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        GuiRendererRender(ImGui::GetDrawData());
     }
     cane::gl::SwapBuffers(g_gl.window);
 #if defined(CANE_SAFEHOUSE)

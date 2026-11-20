@@ -273,7 +273,7 @@ static void PickDebugObject()
 void RenderMenuGui(SW* psw)
 {
     // Start frame
-    ImGui_ImplOpenGL3_NewFrame();
+    GuiRendererNewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 

@@ -6,6 +6,9 @@
 #include "game.h"
 #include "debug.h"
 #include "runtime_error.h"
+#if defined(CANE_SAFEHOUSE)
+#include <safehouse/render/imgui_gl.h>
+#endif
 #if defined(__SWITCH2__)
 #include "clock.h"   // (g_targetFrameRate)
 #endif
@@ -135,6 +138,7 @@ void GL::InitGL()
 	// (test aid: SLY1_HIDDENWINDOW=1, a run whose window is never shown, as Sly 2's SLY2N_HIDDENWINDOW)
 	if (std::getenv("SLY1_HIDDENWINDOW") != nullptr) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
+	const bool fVisibleHint = std::getenv("SLY1_HIDDENWINDOW") == nullptr;
 	width  = 1280;
 	height = 720;
 	renderWidth = static_cast<int>(width);
@@ -149,7 +153,23 @@ void GL::InitGL()
 	aspectRatio = float(width) / float(height);
 	aspectMode = FitToScreen;
 
-	window = glfwCreateWindow(width, height, "Sly Cooper and the Thievius Raccoonus", nullptr, nullptr);
+	window = nullptr;
+#if defined(CANE_SAFEHOUSE)
+	// Vulkan first where it is chosen (Auto included) and starts: the same GL calls on SafeHouse's GL layer. The
+	// programs every frame draws with must be there, or the game comes up on OpenGL.
+	{
+		static const char* const kprograms[][2] = { { "glob.vert", "glob.frag" }, { "screen.vert", "screen.frag" },
+			{ "blot.vert", "blot.frag" }, { "celborder.vert", "celborder.frag" } };
+		cane::vkgame::Config config;
+		config.envRenderer = "SLY1_RENDERER";
+		config.programs = kprograms;
+		config.programCount = 4;
+		window = cane::vkgame::OpenWindow(width, height, fVisibleHint, "Sly Cooper and the Thievius Raccoonus",
+			cane::vkgame::Choice(g_rendererChoice), config);
+	}
+#endif
+	if (window == nullptr)
+		window = glfwCreateWindow(width, height, "Sly Cooper and the Thievius Raccoonus", nullptr, nullptr);
 
 	if (!window)
 	{
@@ -250,7 +270,12 @@ void GL::InitGL()
 	static const std::string s_imguiIni = cane::Utf8(cane::UserDirectory() / "imgui.ini");
 	io.IniFilename = s_imguiIni.c_str();
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init("#version 430");
+#if defined(CANE_SAFEHOUSE)
+	if (FRendererVulkan())
+		cane::imgui_gl::Init(cane::vkgame::Program("imgui.vert", nullptr, "imgui.frag"));
+	else
+#endif
+		ImGui_ImplOpenGL3_Init("#version 430");
 	ImGui::StyleColorsDark();
 
 	const float imguiOffset = g_fDebugGuiOpen ? ImGui::GetFrameHeight() : 0.0f;
@@ -819,12 +844,55 @@ void GL::TerminateGL()
 	glBlotShader.Delete();
 	glBlipShader.Delete();
 
-	ImGui_ImplOpenGL3_Shutdown();
+#if defined(CANE_SAFEHOUSE)
+	if (FRendererVulkan())
+		cane::imgui_gl::Shutdown();
+	else
+#endif
+		ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 	cane::gl::DestroyContext(window);
 	glfwDestroyWindow(window);
 	glfwTerminate();
+}
+
+bool FRendererVulkan()
+{
+#if defined(CANE_SAFEHOUSE)
+	return cane::vkgame::Active();
+#else
+	return false;
+#endif
+}
+
+const char* SzRendererName()
+{
+	return FRendererVulkan() ? "Vulkan" : "OpenGL";
+}
+
+void GuiRendererNewFrame()
+{
+#if defined(CANE_SAFEHOUSE)
+	if (FRendererVulkan())
+	{
+		cane::imgui_gl::NewFrame();
+		return;
+	}
+#endif
+	ImGui_ImplOpenGL3_NewFrame();
+}
+
+void GuiRendererRender(ImDrawData* pdata)
+{
+#if defined(CANE_SAFEHOUSE)
+	if (FRendererVulkan())
+	{
+		cane::imgui_gl::Render(pdata);
+		return;
+	}
+#endif
+	ImGui_ImplOpenGL3_RenderDrawData(pdata);
 }
 
 void InitCameraUbo()
@@ -1532,6 +1600,7 @@ int g_internalResolutionHeight = 0;
 bool g_fInternalResolutionCapped = false;
 int g_resolutionScalePercent = 100;
 int g_monitorIndex = 0;
+int g_rendererChoice = 0;
 int g_textureFiltering = 1;
 float g_outputGamma = 1.0f;
 float g_guiScale = 1.0f;

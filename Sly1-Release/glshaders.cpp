@@ -1,5 +1,6 @@
 #include "glshaders.h"
 #include <limits>
+#include "gl.h"
 
 namespace
 {
@@ -131,6 +132,16 @@ void GLSHADER::Init(const char* vertexFile, const char* geometryFile, const char
 #ifdef CANE_DEKO3D
 	ID = CaneDeko::CreateProgram(vertexFile, geometryFile, fragmentFile);
 #else
+#if defined(CANE_SAFEHOUSE)
+	// (Vulkan: the programs are compiled at build time; there is no GLSL compiler behind the GL calls)
+	if (FRendererVulkan())
+	{
+		ID = cane::vkgame::Program(vertexFile, geometryFile, fragmentFile);
+		if (ID == 0)
+			throw std::runtime_error(std::string("Vulkan program missing: ") + vertexFile);
+		return;
+	}
+#endif
 	std::string vertexCode{};
 	std::string geometryCode{};
 	std::string fragmentCode{};

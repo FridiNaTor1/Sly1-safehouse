@@ -21,6 +21,7 @@
 #if defined(CANE_SAFEHOUSE)
 #include <safehouse/gl_context.h>
 #include <safehouse/glfw_platform.h>
+#include <safehouse/vulkan/vk_game.h>
 #else
 namespace cane
 {
@@ -271,6 +272,15 @@ class GL
 };
 
 void InitCameraUbo();
+// The renderer behind the GL calls (InitGL, the window's creation): 0 Auto (Vulkan where it starts, else OpenGL), 1
+// Vulkan, 2 OpenGL; the settings set it before the window exists (SLY1_RENDERER overrides it). FRendererVulkan: the
+// game runs on Vulkan (SafeHouse's GL layer); SzRendererName: "Vulkan" / "OpenGL".
+extern int g_rendererChoice;
+bool FRendererVulkan();
+const char* SzRendererName();
+// The debug window's draw lists (Dear ImGui): its OpenGL 3 backend on OpenGL, the GL layer's own program on Vulkan.
+void GuiRendererNewFrame();
+void GuiRendererRender(ImDrawData* pdata);
 void InitFrameStream(STREAM* pstream, int streamSize);
 void AdvanceFrameStreams();
 void BeginFrameStream(STREAM* pstream, int cappend);

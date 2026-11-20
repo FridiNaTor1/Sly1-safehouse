@@ -1175,6 +1175,7 @@ void DrawTvBands(TV* ptv)
         GLfloat pointSizePrevious = 1.0f;
         glGetFloatv(GL_POINT_SIZE, &pointSizePrevious);
         glPointSize(std::max(1.0f, TvUiScale()));
+        glUniform1f(glGetUniformLocation(glBlotShader.ID, "u_pointSize"), std::max(1.0f, TvUiScale()));
         glDrawArrays(GL_POINTS, 0, distortionPointCount);
         glPointSize(pointSizePrevious);
     }
