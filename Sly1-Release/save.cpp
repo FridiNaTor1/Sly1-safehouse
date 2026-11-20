@@ -10,6 +10,9 @@
 #include "Input.h"
 #include "content.h"
 #include "../platform/platform.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/settings.h"
+#endif
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -659,6 +662,12 @@ bool LoadSystemSettings(VIDEOSAVESETTINGS* settings)
 {
     if (settings == nullptr)
         return false;
+#if defined(CANE_SAFEHOUSE)
+    // Settings.ini (safehouse/settings.h); without one, this game's own file below is read once and the next save
+    // writes Settings.ini.
+    if (ShLoadSystemSettings(settings))
+        return true;
+#endif
 
     std::ifstream stream(SystemSettingsPath(), std::ios::binary);
     SettingsFileHeader header{};
@@ -890,6 +899,9 @@ bool LoadSystemSettings(VIDEOSAVESETTINGS* settings)
 
 bool SaveSystemSettings()
 {
+#if defined(CANE_SAFEHOUSE)
+    return ShSaveSystemSettings(CaptureVideoSettings());
+#endif
     std::error_code ec;
     std::filesystem::create_directories(SaveDirectory(), ec);
     if (ec)
