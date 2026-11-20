@@ -9,6 +9,9 @@
 #include "gl.h"
 #include "runtime_error.h"
 #include "../platform/platform.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/skipcut.h"
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -331,6 +334,11 @@ namespace
 
     bool SkipPressed()
     {
+#if defined(CANE_SAFEHOUSE)
+        // (also the cutscene skip's Circle hold, with its hint: safehouse/skipcut.h)
+        if (FShMovieSkipHeld())
+            return true;
+#endif
         constexpr JOY_BUTTON buttons[] =
         {
             BTN_L2, BTN_R2, BTN_L1, BTN_R1, BTN_TRIANGLE, BTN_SELECT, BTN_START
@@ -402,6 +410,9 @@ namespace
         glBindTexture(GL_TEXTURE_2D, texture);
         glBindVertexArray(g_gl.sao);
         glDrawArrays(GL_TRIANGLES, 0, 6);
+#if defined(CANE_SAFEHOUSE)
+        ShDrawMovieSkip();
+#endif
         glfwSwapBuffers(g_gl.window);
         return true;
     }
@@ -409,6 +420,9 @@ namespace
     bool PlayCutscene(const CUTSCENEINFO& info, bool skippable)
     {
         const ScopedCutscenePlaying playing;
+#if defined(CANE_SAFEHOUSE)
+        ShResetMovieSkip();
+#endif
         const bool isStartupSplash = info.identityId == STARTUP_SPLASH_QUEUE_ID;
         const CutscenePaths paths =
             FindCutscenePaths(info.videoFileName, info.audioFileName, isStartupSplash);

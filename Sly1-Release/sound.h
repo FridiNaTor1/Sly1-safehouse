@@ -364,6 +364,9 @@ struct VagStreamState
     std::vector<uint8_t> pcm;
     IXAudio2SourceVoice* voice = nullptr;
     uint64_t playBegin = 0;
+#if defined(CANE_SAFEHOUSE)
+    float tGameStart = 0.0f;   // g_clock.t at its start (a skipped cutscene times its lines by it: safehouse/skipcut.h)
+#endif
 };
 
 struct DecodedEffectSample

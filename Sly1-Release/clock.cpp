@@ -1,4 +1,7 @@
 #include "clock.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/skipcut.h"
+#endif
 #include <chrono>
 
 void StartupClock()
@@ -45,6 +48,11 @@ void MarkClockTick(CLOCK* pclock)
     }
 
     float dt = dtTicks * 3.390842e-09f;
+#if defined(CANE_SAFEHOUSE)
+    // (a cutscene being skipped runs in fixed steps: safehouse/skipcut.h)
+    if (const float dtFixed = ShClockFixedStep(); dtFixed > 0.0f)
+        dt = dtFixed;
+#endif
 
     // Keep the engine's minimum update step synchronized with the selected
     // presentation rate (30, 60, or 120 Hz).

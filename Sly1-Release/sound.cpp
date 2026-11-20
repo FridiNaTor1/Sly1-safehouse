@@ -8,6 +8,9 @@
 #include "po.h"
 #include "sw.h"
 #include "clock.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/skipcut.h"
+#endif
 #include "cm.h"
 #include "game.h"
 #include "util.h"
@@ -61,6 +64,9 @@
 extern std::string file;
 
 static std::recursive_mutex s_musicMutex;
+#if defined(CANE_SAFEHOUSE)
+static bool s_fShSkipCutMute = false;   // (safehouse/skipcut.h)
+#endif
 static std::atomic<bool> s_musicWorkerRunning{ false };
 static std::atomic<bool> s_musicUsesGameplayClock{ false };
 static std::thread s_musicWorker;
@@ -4455,6 +4461,9 @@ bool FPauseForVag()
 			return false;
 		}
 		s_vagStream.started = true;
+#if defined(CANE_SAFEHOUSE)
+		s_vagStream.tGameStart = g_clock.t;
+#endif
 		s_vagStartWhenReady = false;
 		s_vagStream.paused = false;
 		ApplyDialogMusicDuck(0.2f);
@@ -4479,6 +4488,19 @@ int FVagPlaying()
 
 	if (s_vagStream.paused)
 		return 1;
+
+#if defined(CANE_SAFEHOUSE)
+	// A skipped cutscene runs the game faster than the device plays: the line lasts its length on the game clock.
+	if (s_fShSkipCutMute)
+	{
+		const uint32_t bytesPerSecond = static_cast<uint32_t>(s_vagStream.format.blockAlign) * s_vagStream.format.samplesPerSec;
+		const float dtLine = bytesPerSecond != 0 ? static_cast<float>(s_vagStream.pcm.size()) / static_cast<float>(bytesPerSecond) : 0.0f;
+		if (g_clock.t - s_vagStream.tGameStart < dtLine)
+			return 1;
+		CloseVagStream();
+		return 0;
+	}
+#endif
 
 	XAUDIO2_VOICE_STATE state{};
 	s_vagStream.voice->GetState(&state);
@@ -5924,18 +5946,39 @@ void SetMasterVolume(float uVol)
 	s_masterVolume = std::clamp(uVol, 0.0f, 1.0f);
 	if (!EnsureMusicEngine())
 		return;
+#if defined(CANE_SAFEHOUSE)
+	const float gain = s_fShSkipCutMute ? 0.0f : s_masterVolume;   // (muted while a cutscene is skipped)
+#else
+	const float gain = s_masterVolume;
+#endif
 	#ifdef _WIN32
 	if (s_finalOutputProcessor)
-		s_finalOutputProcessor->SetTargetGain(s_masterVolume);
+		s_finalOutputProcessor->SetTargetGain(gain);
 	else if (s_musicMasterVoice)
 		ReportXAudioFailureOnce("Set mastering volume fallback",
-			s_musicMasterVoice->SetVolume(s_masterVolume));
+			s_musicMasterVoice->SetVolume(gain));
 	#else
 	if (s_musicMasterVoice)
 		ReportXAudioFailureOnce("Set mastering volume",
-			s_musicMasterVoice->SetVolume(s_masterVolume));
+			s_musicMasterVoice->SetVolume(gain));
 	#endif
 }
+
+#if defined(CANE_SAFEHOUSE)
+void ShSetSkipCutSound(bool fFast)
+{
+	std::lock_guard<std::recursive_mutex> lock(s_musicMutex);
+	s_fShSkipCutMute = fFast;
+	SetMasterVolume(s_masterVolume);
+	// A line already playing keeps its place: its start on the game clock is where the device has got to.
+	if (fFast && s_vagStream.loaded && s_vagStream.started && s_vagStream.voice && s_vagStream.format.samplesPerSec != 0)
+	{
+		XAUDIO2_VOICE_STATE state{};
+		s_vagStream.voice->GetState(&state);
+		s_vagStream.tGameStart = g_clock.t - static_cast<float>(state.SamplesPlayed) / static_cast<float>(s_vagStream.format.samplesPerSec);
+	}
+}
+#endif
 
 float GetMasterVolume()
 {

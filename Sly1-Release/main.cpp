@@ -17,6 +17,7 @@
 #include "../platform/platform.h"
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/frame.h"
+#include "safehouse/skipcut.h"
 #endif
 #include <atomic>
 #include <chrono>
@@ -212,8 +213,41 @@ void RunGameFrame()
     glEnable(GL_DEPTH_TEST);
 
     g_joy.Update(g_gl.window);
+#if defined(CANE_SAFEHOUSE)
+    // Skipping a cutscene (safehouse/skipcut.h): the hold and the hint, then the fast-forward to the scene's end.
+    ShUpdateSkipCut(g_clock.dtReal);
+    const bool fSkipFast = g_psw != nullptr && FShSkipCutFastForward();
+#else
+    const bool fSkipFast = false;
+#endif
     RenderMenuGui(g_psw);
 
+#if defined(CANE_SAFEHOUSE)
+    if (fSkipFast)
+    {
+        // Many game steps this frame (each 1/60 s of game time: ShClockFixedStep), no pad input, nothing drawn
+        const JOY joySaved = g_joy;
+        const auto tStart = std::chrono::steady_clock::now();
+        do
+        {
+            for (int button = 0; button < BTN_MAX; ++button)
+                g_joy.current[static_cast<JOY_BUTTON>(button)] = g_joy.previous[static_cast<JOY_BUTTON>(button)] = false;
+            g_joy.x = g_joy.y = g_joy.x2 = g_joy.y2 = g_joy.uDeflect = g_joy.uDeflect2 = 0.0f;
+            UpdateUi(&g_ui);
+            UpdateGameState(g_clock.dt);
+            SetupCm(g_pcm);
+            OpenFrame();
+            MarkClockTick(&g_clock);
+            UpdateCodes();
+            UpdateSw(g_psw, g_clock.dt);
+        } while (FShSkipCutStep() && g_psw != nullptr &&
+            std::chrono::steady_clock::now() - tStart < std::chrono::milliseconds(25));
+        g_joy = joySaved;
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    }
+    else
+#endif
     if (g_psw != nullptr)
     {
         UpdateUi(&g_ui);
@@ -241,6 +275,9 @@ void RunGameFrame()
 			DrawSwDialogTriggers(g_pcm);
 
         DrawUi(&g_ui);
+#if defined(CANE_SAFEHOUSE)
+        ShDrawSkipCut();
+#endif
     }
 
     if (g_fMsaa)
