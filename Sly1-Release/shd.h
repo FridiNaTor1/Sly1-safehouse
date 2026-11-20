@@ -1,6 +1,6 @@
 #pragma once
 #include <vector>
-#include <glad/glad.h>
+#include "glstate.h"
 #include <string>
 #include <fstream>
 #include <sstream>

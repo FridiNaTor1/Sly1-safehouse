@@ -301,27 +301,28 @@ void DrawSqtrm(RPL* prpl)
         return;
 
     glGlobShader.Use();
-    AppendStream(&ropStream, &prpl->ro, sizeof(ROGL), sizeof(ROGL));
+    AppendGlobRo(&prpl->ro);
+    DRAWGL* const pdrawgl = PdrawglEdit();
 
     if (psqtrm->pshd->shdk == SHDK_ThreeWay)
     {
-        glUniform1i(glslRko, 1);
+        pdrawgl->rko = 1;
         const GLuint ambientTexture = !tex.glShadowMap.empty() ? tex.glShadowMap[0] : pbmp->glShadowMap;
         const GLuint saturateTexture = !tex.glSaturateMap.empty() ? tex.glSaturateMap[0] : pbmp->glSaturateMap;
         BindGlobThreeWayTextures(ambientTexture, diffuseTexture, saturateTexture);
     }
     else
     {
-        glUniform1i(glslRko, 0);
+        pdrawgl->rko = 0;
         BindGlobOneWayTexture(diffuseTexture);
     }
-    glUniform1i(glslfAlphaTest, 0);
-    glUniform1i(glslfAnimateUv, 0);
-    glUniform1i(glslfSkin, 0);
-    glUniform1i(glslfPose, 0);
-    glUniform1f(glslUnSelfIllum, 1.0f);
-    glUniform3fv(glslSubGlobPosCenter, 1, glm::value_ptr(psqtrm->palo->xf.posWorld));
-    glUniform1f(glslSubGlobRadius, psqtrm->sRadius);
+    pdrawgl->fAlphaTest = 0;
+    pdrawgl->fAnimateUv = 0;
+    pdrawgl->fSkin = 0;
+    pdrawgl->fPose = 0;
+    pdrawgl->unSelfIllum = 1.0f;
+    pdrawgl->subGlobPosCenter = psqtrm->palo->xf.posWorld;
+    pdrawgl->subGlobRadius = psqtrm->sRadius;
 
     glBindVertexArray(g_gl.sqtrVao);
     glVertexAttrib3f(1, 0.0f, 0.0f, 1.0f);
@@ -349,7 +350,7 @@ void DrawSqtrm(RPL* prpl)
     glBufferData(GL_ARRAY_BUFFER, uploadSize, nullptr, GL_STREAM_DRAW);
     glBufferSubData(GL_ARRAY_BUFFER, 0, uploadSize, vertices);
 
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, vertexCount);
+    glDrawArraysInstancedBaseInstance(GL_TRIANGLE_STRIP, 0, vertexCount, 1, static_cast<GLuint>(IdrawglCurrent()));
 
     glDepthMask(depthWriteWasEnabled);
     glDepthFunc(depthFunc);

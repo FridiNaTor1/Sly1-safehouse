@@ -755,13 +755,14 @@ void DrawHaloSpks(glm::vec3* pposRoot, int cspks, SPKS* aspks, SPKD* pspkd, RPL*
     outline.swap(smoothOutline);
 
     glGlobShader.Use();
-    AppendStream(&ropStream, &prpl->ro, sizeof(ROGL), sizeof(ROGL));
-    glUniform1i(glslRko, 0);
-    glUniform1i(glslfAlphaTest, 0);
-    glUniform1i(glslfAnimateUv, 0);
-    glUniform1i(glslfSkin, 0);
-    glUniform1i(glslfPose, 0);
-    glUniform1f(glslUnSelfIllum, 1.0f);
+    AppendGlobRo(&prpl->ro);
+    DRAWGL* const pdrawgl = PdrawglEdit();
+    pdrawgl->rko = 0;
+    pdrawgl->fAlphaTest = 0;
+    pdrawgl->fAnimateUv = 0;
+    pdrawgl->fSkin = 0;
+    pdrawgl->fPose = 0;
+    pdrawgl->unSelfIllum = 1.0f;
 
     const GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
     GLboolean depthWriteWasEnabled = GL_TRUE;
@@ -835,7 +836,8 @@ void DrawHaloSpks(glm::vec3* pposRoot, int cspks, SPKS* aspks, SPKD* pspkd, RPL*
         const GLsizeiptr size = static_cast<GLsizeiptr>(vertices.size() * sizeof(SQTRGPU));
         glBufferData(GL_ARRAY_BUFFER, size, nullptr, GL_STREAM_DRAW);
         glBufferSubData(GL_ARRAY_BUFFER, 0, size, vertices.data());
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, static_cast<GLsizei>(vertices.size()));
+        glDrawArraysInstancedBaseInstance(GL_TRIANGLE_STRIP, 0, static_cast<GLsizei>(vertices.size()), 1,
+            static_cast<GLuint>(IdrawglCurrent()));
     }
 
     glBindVertexArray(0);

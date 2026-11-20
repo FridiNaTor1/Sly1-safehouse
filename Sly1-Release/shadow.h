@@ -41,6 +41,16 @@ struct ACTIVESHADOWS
     int shadowsIndices[MAX_SHADOWS];
 };
 
+// The SHADOWBLK fields the glob vertex shader's candidate tests read, copied
+// from the data PrepareSwShadows uploads. Parallel to activeShadows.
+struct ACTIVESHADOWTEST
+{
+    glm::vec3 posEffect;
+    float sRadiusEffect;
+    int fDynamic;
+    int shdk;
+};
+
 class SHADOW
 {
     public:
@@ -97,4 +107,5 @@ extern GLuint shadowSsbo;
 extern GLuint activeShadowsSsbo;
 extern std::vector <SHADOWBLK> shadowBlk;
 extern ACTIVESHADOWS activeShadows;
+extern ACTIVESHADOWTEST activeShadowTests[MAX_SHADOWS];
 extern DL g_dlShadowPending;

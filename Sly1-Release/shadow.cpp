@@ -1,5 +1,8 @@
 #include "shadow.h"
 #include "dysh.h"
+#ifdef CANE_DEKO3D
+#include <safehouse/switch/sly1/deko/backend.h>
+#endif
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -9,16 +12,122 @@ namespace
 	GLuint shadowTextureArray = 0;
 	int shadowTextureLayerCount = 0;
 
+	// Static sources are resampled into this RGBA8 layer exactly as they used
+	// to be into the array, then their alpha is copied into the R8 array.
+	// It lives only while AllocateShadows fills the array.
+	GLuint shadowStagingTexture = 0;
+	GLuint shadowAlphaProgram = 0;
+	GLuint shadowAlphaVao = 0;
+
+#ifdef CANE_DEKO3D
+	// Precompiled from platform/switch/sly1/deko/shaders/shadowalpha.*
+	bool EnsureShadowAlphaProgram()
+	{
+		if (shadowAlphaProgram != 0)
+			return true;
+
+		shadowAlphaProgram = CaneDeko::CreateProgram("shadowalpha.vert", nullptr, "shadowalpha.frag");
+		if (shadowAlphaVao == 0)
+			glGenVertexArrays(1, &shadowAlphaVao);
+		return true;
+	}
+#else
+	const char* const kShadowAlphaVertexSource = R"(#version 430 core
+void main()
+{
+    // One triangle that covers the viewport.
+    vec2 pos = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+    gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
+}
+)";
+
+	// texelFetch reads each staging texel unfiltered, so every layer texel is
+	// the bit-exact 8-bit alpha the RGBA8 layer used to hold.
+	const char* const kShadowAlphaFragmentSource = R"(#version 430 core
+layout(binding = 0) uniform sampler2DArray sourceLayer;
+out vec4 FragColor;
+void main()
+{
+    FragColor = vec4(texelFetch(sourceLayer, ivec3(gl_FragCoord.xy, 0), 0).a);
+}
+)";
+
+	GLuint CompileShadowAlphaShader(GLenum type, const char* source)
+	{
+		const GLuint shader = glCreateShader(type);
+		glShaderSource(shader, 1, &source, nullptr);
+		glCompileShader(shader);
+
+		GLint compiled = GL_FALSE;
+		glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
+		if (compiled == GL_FALSE)
+		{
+			char infoLog[1024] = {};
+			glGetShaderInfoLog(shader, sizeof(infoLog), nullptr, infoLog);
+			std::cout << "Shadow alpha shader compilation failed:\n" << infoLog << "\n";
+			glDeleteShader(shader);
+			return 0;
+		}
+
+		return shader;
+	}
+
+	bool EnsureShadowAlphaProgram()
+	{
+		if (shadowAlphaProgram != 0)
+			return true;
+
+		const GLuint vertexShader = CompileShadowAlphaShader(GL_VERTEX_SHADER, kShadowAlphaVertexSource);
+		const GLuint fragmentShader = CompileShadowAlphaShader(GL_FRAGMENT_SHADER, kShadowAlphaFragmentSource);
+		if (vertexShader == 0 || fragmentShader == 0)
+		{
+			if (vertexShader != 0)
+				glDeleteShader(vertexShader);
+			if (fragmentShader != 0)
+				glDeleteShader(fragmentShader);
+			return false;
+		}
+
+		const GLuint program = glCreateProgram();
+		glAttachShader(program, vertexShader);
+		glAttachShader(program, fragmentShader);
+		glLinkProgram(program);
+		glDeleteShader(vertexShader);
+		glDeleteShader(fragmentShader);
+
+		GLint linked = GL_FALSE;
+		glGetProgramiv(program, GL_LINK_STATUS, &linked);
+		if (linked == GL_FALSE)
+		{
+			char infoLog[1024] = {};
+			glGetProgramInfoLog(program, sizeof(infoLog), nullptr, infoLog);
+			std::cout << "Shadow alpha program link failed:\n" << infoLog << "\n";
+			glDeleteProgram(program);
+			return false;
+		}
+
+		// Core profile draws need a vertex array object, even without attributes.
+		if (shadowAlphaVao == 0)
+			glGenVertexArrays(1, &shadowAlphaVao);
+
+		shadowAlphaProgram = program;
+		return true;
+	}
+#endif
+
 	void CreateShadowTextureArray(int layerCount)
 	{
 		shadowTextureLayerCount = layerCount;
 		if (layerCount <= 0)
 			return;
 
+		// glob.frag samples only the alpha of a shadow layer, so the layers are
+		// single-channel and the swizzle returns the stored value as alpha.
 		glGenTextures(1, &shadowTextureArray);
 		glBindTexture(GL_TEXTURE_2D_ARRAY, shadowTextureArray);
-		glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8,
+		glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_R8,
 			g_gl.dyshWidth, g_gl.dyshHeight, layerCount);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_SWIZZLE_A, GL_RED);
 		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		// The bindless path defaulted each source texture to GL_REPEAT. Per-layer
@@ -28,10 +137,22 @@ namespace
 		glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 	}
 
+	void DeleteShadowStagingTexture()
+	{
+		if (shadowStagingTexture != 0)
+		{
+			glDeleteTextures(1, &shadowStagingTexture);
+			shadowStagingTexture = 0;
+		}
+	}
+
 	bool CopyTextureToShadowLayer(GLuint sourceTexture, int layer)
 	{
 		if (sourceTexture == 0 || shadowTextureArray == 0 ||
 			layer < 0 || layer >= shadowTextureLayerCount)
+			return false;
+
+		if (!EnsureShadowAlphaProgram())
 			return false;
 
 		GLint sourceWidth = 0;
@@ -44,6 +165,17 @@ namespace
 
 		if (sourceWidth <= 0 || sourceHeight <= 0)
 			return false;
+
+		if (shadowStagingTexture == 0)
+		{
+			glGenTextures(1, &shadowStagingTexture);
+			glBindTexture(GL_TEXTURE_2D_ARRAY, shadowStagingTexture);
+			glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8,
+				g_gl.dyshWidth, g_gl.dyshHeight, 1);
+			glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+		}
 
 		GLint previousReadFbo = 0;
 		GLint previousDrawFbo = 0;
@@ -63,10 +195,10 @@ namespace
 		glReadBuffer(GL_COLOR_ATTACHMENT0);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, drawFbo);
 		glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-			shadowTextureArray, 0, layer);
+			shadowStagingTexture, 0, 0);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-		const bool complete =
+		bool complete =
 			glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE &&
 			glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
 
@@ -83,6 +215,53 @@ namespace
 			glBlitFramebuffer(0, 0, sourceWidth, sourceHeight,
 				0, 0, g_gl.dyshWidth, g_gl.dyshHeight,
 				GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+			glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+				shadowTextureArray, 0, layer);
+			complete = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+		}
+
+		if (complete)
+		{
+			GLint previousProgram = 0;
+			GLint previousVao = 0;
+			GLint previousActiveTexture = 0;
+			GLint previousArrayTexture = 0;
+			GLint previousViewport[4] = {};
+			const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
+			const GLboolean depthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
+			const GLboolean stencilTestEnabled = glIsEnabled(GL_STENCIL_TEST);
+			const GLboolean cullFaceEnabled = glIsEnabled(GL_CULL_FACE);
+			glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
+			glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &previousVao);
+			glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+			glGetIntegerv(GL_VIEWPORT, previousViewport);
+			glActiveTexture(GL_TEXTURE0);
+			glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY, &previousArrayTexture);
+
+			glDisable(GL_BLEND);
+			glDisable(GL_DEPTH_TEST);
+			glDisable(GL_STENCIL_TEST);
+			glDisable(GL_CULL_FACE);
+			glViewport(0, 0, g_gl.dyshWidth, g_gl.dyshHeight);
+			glBindTexture(GL_TEXTURE_2D_ARRAY, shadowStagingTexture);
+			glUseProgram(shadowAlphaProgram);
+			glBindVertexArray(shadowAlphaVao);
+			glDrawArrays(GL_TRIANGLES, 0, 3);
+
+			glBindVertexArray(static_cast<GLuint>(previousVao));
+			glUseProgram(static_cast<GLuint>(previousProgram));
+			glBindTexture(GL_TEXTURE_2D_ARRAY, static_cast<GLuint>(previousArrayTexture));
+			glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+			glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
+			if (cullFaceEnabled)
+				glEnable(GL_CULL_FACE);
+			if (stencilTestEnabled)
+				glEnable(GL_STENCIL_TEST);
+			if (depthTestEnabled)
+				glEnable(GL_DEPTH_TEST);
+			if (blendEnabled)
+				glEnable(GL_BLEND);
 		}
 
 		glColorMask(previousColorMask[0], previousColorMask[1],
@@ -553,6 +732,8 @@ void AllocateShadows(SW* psw)
 		pshadow = pshadow->dle.pshadowNext;
 	}
 
+	DeleteShadowStagingTexture();
+
 	if (ignoredCount > 0)
 	{
 		std::cout << "Projected shadow array layer limit reached; ignored "
@@ -669,6 +850,12 @@ void PrepareSwShadows(SW *psw, CM *pcm)
 		GLsizeiptr offset = headerSize + GLsizeiptr(pshadow->ssboIndex) * sizeof(SHADOWBLK);
 		glBufferSubData(GL_SHADER_STORAGE_BUFFER, offset,  sizeof(SHADOWBLK), &pshadow->rsh);
 
+		ACTIVESHADOWTEST& test = activeShadowTests[activeShadows.numShadows];
+		test.posEffect = glm::vec3(pshadow->rsh.posEffect);
+		test.sRadiusEffect = pshadow->rsh.sRadiusEffect;
+		test.fDynamic = pshadow->rsh.fDynamic;
+		test.shdk = pshadow->rsh.shdk;
+
 		// Store original global shadow index
 		activeShadows.shadowsIndices[activeShadows.numShadows++] = pshadow->ssboIndex;
 	}
@@ -734,6 +921,7 @@ void DeallocateSwShadows()
 		shadowTextureArray = 0;
 	}
 	shadowTextureLayerCount = 0;
+	DeleteShadowStagingTexture();
 
 	shadowBlk.clear();
 	shadowBlk.shrink_to_fit();
@@ -743,4 +931,5 @@ GLuint shadowSsbo = 0;
 GLuint activeShadowsSsbo = 0;
 std::vector <SHADOWBLK> shadowBlk;
 ACTIVESHADOWS activeShadows;
+ACTIVESHADOWTEST activeShadowTests[MAX_SHADOWS];
 DL g_dlShadowPending;

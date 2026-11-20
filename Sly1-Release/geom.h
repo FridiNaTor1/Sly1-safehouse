@@ -1,7 +1,7 @@
 #pragma once
 #include "math.h"
 #include "bis.h"
-#include <glad/glad.h>
+#include "glstate.h"
 #include <vector>
 
 // Collision related

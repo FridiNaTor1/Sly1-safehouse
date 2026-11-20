@@ -1,4 +1,8 @@
 #version 430 core
+#ifdef DEKO3D
+invariant gl_Position;
+precise gl_Position;
+#endif
 
 #define RKO_OneWay   0
 #define RKO_ThreeWay 1
@@ -27,12 +31,16 @@
 #define FOG_PS3  2
 
 
+#define SHADOW_CANDIDATES_ALL -1
+
 layout (location = 0) in vec3  vertex;
 layout (location = 1) in vec3  normal;
 layout (location = 2) in vec4  color;
 layout (location = 3) in vec2  uv;
 layout (location = 4) in uvec4 boneIndices;
 layout (location = 5) in vec4  boneWeights;
+// Instanced with divisor 1 and drawn with base instance = record index.
+layout (location = 6) in uint  drawIndex;
 
 struct SWP // Scene world properties
 {
@@ -99,7 +107,7 @@ layout(std140, binding = 0) uniform CMGL
     vec4 cameraPos;
 } cm;
 
-layout(std140, binding = 1) uniform RO
+struct RO
 {
     mat4  model; 
     float uAlpha;
@@ -117,7 +125,39 @@ layout(std140, binding = 1) uniform RO
     int   fDynamicLight;
     int   trlk;
     vec4  posCenter;
-} op;
+};
+
+// Former per-draw uniforms; mirrors DRAWGL in gl.h.
+struct DRAW
+{
+    int   iro;
+    int   fSkin;
+    int   fPose;
+    int   fAnimateUv;
+    vec2  uvOffsets;
+    float unSelfIllum;
+    int   rko;
+    vec4  projectedVolumeColor;
+    int   fAlphaTest;
+    int   projectedVolumeFinalPass;
+    int   cshadow;
+    uint  grfshadowTest;
+    vec4  subGlobSphere; // subGlobPosCenter, subGlobRadius
+    uvec4 ashadow[2];
+};
+
+layout(std430, binding = 0) restrict readonly buffer ROBLK
+{
+    RO ros[];
+};
+
+layout(std430, binding = 1) restrict readonly buffer DRAWBLK
+{
+    DRAW draws[];
+};
+
+int iro;
+#define op ros[iro]
 
 layout(std430, binding = 2) readonly buffer LIGHTBLK
 {   
@@ -172,27 +212,31 @@ layout(std430, binding = 11) readonly buffer POSENORMALBLK
     vec4 poseDnormal[];
 };
 
-layout(std430, binding = 14) readonly buffer POSEWEIGHTBLK
-{
-    float poseWeights[];
-};
+// Pose weights are per-draw uniforms (render.cpp); MAX_POSES matches it.
+#define MAX_POSES 64
+uniform float poseWeights[MAX_POSES];
 
 layout(std430, binding = 13) readonly buffer TVLIGHTBLK
 {
     LIGHT tvLights[];
 };
 
-uniform int fPose;
 uniform int poseCount;
 
-uniform int   rko;
-uniform int   fAnimateUv;
-uniform vec2  uvOffsets;
-uniform float unSelfIllum;
+#ifdef DEKO3D
+// Background drawn after the opaque pass on the far plane (render.cpp DrawSwBackground)
+uniform int farDepth;
+#endif
 
-uniform int fSkin;
-uniform vec3  subGlobPosCenter;
-uniform float subGlobRadius;
+int   fPose;
+int   rko;
+int   fAnimateUv;
+vec2  uvOffsets;
+float unSelfIllum;
+
+int   fSkin;
+vec3  subGlobPosCenter;
+float subGlobRadius;
 
 vec3 normalLocal;
 vec3 normalWorld;
@@ -209,9 +253,14 @@ layout(location = 1) out vec3 worldNormal;
 layout(location = 2) out vec4 vertexColor;
 layout(location = 3) out vec2 texcoord;
 
-layout(location = 4) out MATERIAL material;
-layout(location = 7) flat out int vShadowCount;
-layout(location = 8) flat out ivec4 vShadowIndices[3];
+layout(location = 4)  out MATERIAL material; // locations 4-6, one per member
+// Fragment-shader inputs that are constant for a draw: projectedVolumeColor,
+// (op.darken, op.uAlpha), (rko, fAlphaTest, projectedVolumeFinalPass, shadow
+// count) and up to MAX_OBJECT_SHADOWS shadow indices, one per byte.
+layout(location = 7)  flat out vec4  vProjectedVolumeColor;
+layout(location = 8)  flat out vec2  vDarkenAlpha;
+layout(location = 9)  flat out ivec4 vDrawFlags;
+layout(location = 10) flat out uvec3 vShadowList;
 layout(location = 11) out float fogIntensity;
 
 void ApplyWarp(inout vec4 vLocal, inout vec2 uvLocal);
@@ -240,11 +289,6 @@ void CalculateFog();
 void CalculateFogPS2();
 void CalculateFogPS3();
 
-void SetObjectShadowIndex(int slot, int value)
-{
-    vShadowIndices[slot >> 2][slot & 3] = value;
-}
-
 vec3 SafeNormalize(vec3 value)
 {
     float length2 = dot(value, value);
@@ -258,18 +302,19 @@ int AvailableLightCount()
 
 void main()
 {
-    worldPos = vec4(0.0);
-    worldNormal = vec3(0.0);
-    vertexColor = vec4(0.0);
-    texcoord = vec2(0.0);
-    material.ambient = 0.0;
-    material.midtone = vec4(0.0);
-    material.light = vec4(0.0);
-    vShadowCount = 0;
+    DRAW draw = draws[drawIndex];
+    iro = draw.iro;
+    fSkin = draw.fSkin;
+    fPose = draw.fPose;
+    fAnimateUv = draw.fAnimateUv;
+    uvOffsets = draw.uvOffsets;
+    unSelfIllum = draw.unSelfIllum;
+    rko = draw.rko;
+    subGlobPosCenter = draw.subGlobSphere.xyz;
+    subGlobRadius = draw.subGlobSphere.w;
 
-    for (int i = 0; i < 3; ++i)
-        vShadowIndices[i] = ivec4(-1);
-    fogIntensity = 0.0;
+    vProjectedVolumeColor = draw.projectedVolumeColor;
+    vDarkenAlpha = vec2(op.darken, op.uAlpha);
 
     vec4 positionLocal = vec4(vertex, 1.0);
     normalLocal = normal;
@@ -335,12 +380,18 @@ void main()
     if (rko == RKO_ThreeWay)
         StartThreeWay();
 
-    if (numActiveShadows > 0)
+    // The CPU lists the candidates that pass FShadowValid and the sphere test
+    // in active-shadow order. Flagged candidates still need the per-vertex
+    // test here; the first MAX_OBJECT_SHADOWS survivors are kept as before.
+    int vShadowCount = 0;
+    uint shadowList[3] = uint[3](0u, 0u, 0u);
+
+    if (draw.cshadow == SHADOW_CANDIDATES_ALL)
     {
         int shadowCount = clamp(numActiveShadows, 0, MAX_SHADOWS);
         int levelShadowCount = min(max(numLevelShadows, 0), shadows.length());
 
-        for (int i = 0; i < shadowCount; ++i)
+        for (int i = 0; i < shadowCount && vShadowCount < MAX_OBJECT_SHADOWS; ++i)
         {
             int shIdx = shadowIndices[i];
             if (shIdx < 0 || shIdx >= levelShadowCount)
@@ -353,18 +404,41 @@ void main()
             if (!ShadowIntersectsSphere(shadow, subGlobPosCenter, subGlobRadius))
                 continue;
 
-            if (vShadowCount < MAX_OBJECT_SHADOWS)
-            {
-                SetObjectShadowIndex(vShadowCount, shIdx);
-                vShadowCount++;
-            }
+            shadowList[vShadowCount >> 2] |= uint(shIdx) << ((vShadowCount & 3) * 8);
+            vShadowCount++;
         }
     }
+    else if (draw.grfshadowTest == 0u)
+    {
+        vShadowCount = min(draw.cshadow, MAX_OBJECT_SHADOWS);
+        shadowList = uint[3](draw.ashadow[0].x, draw.ashadow[0].y, draw.ashadow[0].z);
+    }
+    else
+    {
+        for (int i = 0; i < draw.cshadow && vShadowCount < MAX_OBJECT_SHADOWS; ++i)
+        {
+            uint shIdx = (draw.ashadow[i >> 4][(i >> 2) & 3] >> ((i & 3) * 8)) & 0xFFu;
+
+            if ((draw.grfshadowTest & (1u << i)) != 0u &&
+                !ShadowIntersectsSphere(shadows[shIdx], subGlobPosCenter, subGlobRadius))
+                continue;
+
+            shadowList[vShadowCount >> 2] |= shIdx << ((vShadowCount & 3) * 8);
+            vShadowCount++;
+        }
+    }
+
+    vDrawFlags = ivec4(rko, draw.fAlphaTest, draw.projectedVolumeFinalPass, vShadowCount);
+    vShadowList = uvec3(shadowList[0], shadowList[1], shadowList[2]);
 
     if (swp.fogType != FOG_NONE)
         CalculateFog();
 
     gl_Position = cm.matWorldToClip * worldPos;
+#ifdef DEKO3D
+    if (farDepth != 0)
+        gl_Position.z = gl_Position.w;
+#endif
 }
 
 void ApplyWarp(inout vec4 vLocal, inout vec2 uvLocal)
@@ -429,7 +503,7 @@ void ApplyPoses(inout vec4 positionLocal, inout vec3 normalLocal)
 {
     vec3 dpos = vec3(0.0);
     vec3 dnormal = vec3(0.0);
-    int count = min(max(poseCount, 0), poseWeights.length());
+    int count = min(max(poseCount, 0), MAX_POSES);
     int poseBase = gl_VertexID * poseCount;
 
     for (int ipose = 0; ipose < count; ++ipose)

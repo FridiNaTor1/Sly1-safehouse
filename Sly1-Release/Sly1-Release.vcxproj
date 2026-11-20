@@ -301,6 +301,7 @@
     <ClCompile Include="glint.cpp" />
     <ClCompile Include="glob.cpp" />
     <ClCompile Include="glshaders.cpp" />
+    <ClCompile Include="glstate.cpp" />
     <ClCompile Include="gomer.cpp" />
     <ClCompile Include="hg.cpp" />
     <ClCompile Include="hide.cpp" />
@@ -592,6 +593,7 @@
     <ClInclude Include="glint.h" />
     <ClInclude Include="glob.h" />
     <ClInclude Include="glshaders.h" />
+    <ClInclude Include="glstate.h" />
     <ClInclude Include="gomer.h" />
     <ClInclude Include="hg.h" />
     <ClInclude Include="hide.h" />
@@ -677,6 +679,7 @@
     <ClInclude Include="sensor.h" />
     <ClInclude Include="serialize.h" />
     <ClInclude Include="shadow.h" />
+    <ClInclude Include="shadow_projection.h" />
     <ClInclude Include="shape.h" />
     <ClInclude Include="shd.h" />
     <ClInclude Include="shdanim.h" />

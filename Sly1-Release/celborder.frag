@@ -1,16 +1,12 @@
 #version 430 core
 
-layout(std140, binding = 1) uniform ROCEL
-{
-    mat4  model;                 
-	vec4  celRgba;         
-	float uAlphaCelBorder;
-}cbp;
+flat in vec4  vCelRgba;
+flat in float vAlphaCelBorder;
 
-layout(location = 0) out vec4 FragColor;
+out vec4 FragColor;
 
 void main()
 {
-	FragColor.rgb = cbp.celRgba.rgb;
-	FragColor.a = clamp(cbp.celRgba.a * cbp.uAlphaCelBorder, 0.0, 1.0);
+	FragColor.rgb = vCelRgba.rgb;
+	FragColor.a = clamp(vCelRgba.a * vAlphaCelBorder, 0.0, 1.0);
 }

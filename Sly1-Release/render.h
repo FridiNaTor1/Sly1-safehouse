@@ -34,6 +34,12 @@ void DrawMurkClear(int baseVertex, int firstIndex, int indexCount);
 void DrawMurkFill(int baseVertex, int firstIndex, int indexCount);
 void DrawTranslucent(int baseVertex, int firstIndex, int indexCount);
 void DrawBlip(RPL* prplblip);
+// Per-draw parameters of the glob program (DRAWGL in gl.h). A field keeps its
+// value until changed through PdrawglEdit. IdrawglCurrent returns the record
+// index to pass as the base instance of the next glob-program draw.
+DRAWGL* PdrawglEdit();
+void AppendGlobRo(const RO* pro);
+int IdrawglCurrent();
 // Draws all collision models in SW
 void DrawSwCollisionAll(CM* pcm);
 void DrawSwDialogTriggers(CM* pcm);

@@ -1,4 +1,8 @@
 #version 430 core
+// NOKILL (the Switch): no alpha test, so depth and stencil tests run before shading.
+#ifdef NOKILL
+layout(early_fragment_tests) in;
+#endif
 #define RKO_OneWay   0
 #define RKO_ThreeWay 1
 
@@ -53,25 +57,13 @@ struct MATERIAL
     vec4  light;
 };
 
-layout(std140, binding = 1) uniform RO
+// The RO fields this stage reads, passed flat from the vertex shader.
+struct ROFRAG
 {
-    mat4  model;
     float uAlpha;
-    float uFog;
     float darken;
-    int   grfglob;
-    int   blotTvLight;
-    int   warpType;
-    int   warpCmat;
-    int   warpCvtx;
-    mat4  amatDpos[4];
-    mat4  amatDuv[4];
-    int   fDynamic;
-    float sRadius;
-    int   fDynamicLight;
-    int   trlk;
-    vec4  posCenter;
-} op;
+};
+ROFRAG op;
 
 layout(std430, binding = 4) readonly buffer SHADOWBLK
 {
@@ -80,20 +72,25 @@ layout(std430, binding = 4) readonly buffer SHADOWBLK
     SHADOW shadows[];
 };
 
-uniform int   fAlphaTest;
 uniform float alphaCutOff;
-uniform int   rko;
-uniform vec4  projectedVolumeColor;
-uniform int   projectedVolumeFinalPass;
+// 0.5 / size of shadowTextureArray.
+uniform vec2  shadowHalfTexel;
+
+int   fAlphaTest;
+int   rko;
+vec4  projectedVolumeColor;
+int   projectedVolumeFinalPass;
 
 layout(location = 0) in vec4 worldPos;
 layout(location = 1) in vec3 worldNormal;
 layout(location = 2) in vec4 vertexColor;
 layout(location = 3) in vec2 texcoord;
 
-layout(location = 4) in MATERIAL material;
-layout(location = 7) flat in int vShadowCount;
-layout(location = 8) flat in ivec4 vShadowIndices[3];
+layout(location = 4)  in MATERIAL material; // locations 4-6, one per member
+layout(location = 7)  flat in vec4  vProjectedVolumeColor;
+layout(location = 8)  flat in vec2  vDarkenAlpha;
+layout(location = 9)  flat in ivec4 vDrawFlags;
+layout(location = 10) flat in uvec3 vShadowList;
 layout(location = 11) in float fogIntensity;
 
 layout(location = 0) out vec4 FragColor;
@@ -105,11 +102,7 @@ bool ShadowIntersectsSphere(vec3 objectCenter, float objectRadius, vec3 shadowCe
 vec3 ApplyProjectedShadow(SHADOW shadow);
 float SampleShadowTexture(SHADOW shadow, vec2 uv);
 void ApplyFog();
-
-int ObjectShadowIndex(int slot)
-{
-    return vShadowIndices[slot >> 2][slot & 3];
-}
+int ShadowListIndex(int i);
 
 int AvailableShadowCount()
 {
@@ -118,8 +111,17 @@ int AvailableShadowCount()
 
 void main()
 {
+    op.darken = vDarkenAlpha.x;
+    op.uAlpha = vDarkenAlpha.y;
+    rko = vDrawFlags.x;
+    fAlphaTest = vDrawFlags.y;
+    projectedVolumeFinalPass = vDrawFlags.z;
+    projectedVolumeColor = vProjectedVolumeColor;
+
+#ifndef NOKILL
     if (fAlphaTest == 1)
         AlphaTest();
+#endif
 
     FragColor = vec4(0.0);
 
@@ -174,12 +176,9 @@ void DrawOneWay()
 
     if (alpha > 0.9)
     {
-        int shadowCount = clamp(vShadowCount, 0, MAX_OBJECT_SHADOWS);
-        for (int i = 0; i < shadowCount; ++i)
+        for (int i = 0; i < vDrawFlags.w; ++i)
         {
-            int idx = ObjectShadowIndex(i);
-            if (idx < 0 || idx >= AvailableShadowCount())
-                continue;
+            int idx = ShadowListIndex(i);
             FragColor.rgb *= ApplyProjectedShadow(shadows[idx]);
         }
     }
@@ -198,18 +197,20 @@ void DrawThreeWay()
 
     if (alpha > 0.9)
     {
-        int shadowCount = clamp(vShadowCount, 0, MAX_OBJECT_SHADOWS);
-        for (int i = 0; i < shadowCount; ++i)
+        for (int i = 0; i < vDrawFlags.w; ++i)
         {
-            int idx = ObjectShadowIndex(i);
-            if (idx < 0 || idx >= AvailableShadowCount())
-                continue;
+            int idx = ShadowListIndex(i);
             lit.rgb *= ApplyProjectedShadow(shadows[idx]);
         }
     }
 
     FragColor.rgb = lit * op.darken;
     FragColor.a = clamp(alpha * op.uAlpha, 0.0, 1.0);
+}
+
+int ShadowListIndex(int i)
+{
+    return int((vShadowList[i >> 2] >> ((i & 3) * 8)) & 0xFFu);
 }
 
 bool ShadowIntersectsSphere(vec3 objectCenter, float objectRadius, vec3 shadowCenter, float shadowRadius)
@@ -289,14 +290,19 @@ float SampleShadowTexture(SHADOW shadow, vec2 uv)
     // Bindless textures carried independent GL_REPEAT/GL_CLAMP_TO_EDGE state.
     // The array itself repeats. Clamp exceptional layers to texel centers so
     // linear filtering cannot wrap across the opposite edge.
-    vec2 halfTexel = 0.5 / vec2(textureSize(shadowTextureArray, 0).xy);
+    vec2 halfTexel = shadowHalfTexel;
     if (shadow.fDynamic != 0 || shadow.clampS != 0)
         uv.x = clamp(uv.x, halfTexel.x, 1.0 - halfTexel.x);
     if (shadow.fDynamic != 0 || shadow.clampT != 0)
         uv.y = clamp(uv.y, halfTexel.y, 1.0 - halfTexel.y);
 
+#ifdef DEKO3D
+    // Implicit derivatives are undefined in this loop; the layers have one level.
+    return textureLod(shadowTextureArray, vec3(uv, float(shadow.textureSlot)), 0.0).a;
+#else
     return texture(shadowTextureArray,
         vec3(uv, float(shadow.textureSlot))).a;
+#endif
 }
 
 void ApplyFog()

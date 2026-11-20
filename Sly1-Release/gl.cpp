@@ -6,6 +6,9 @@
 #include "game.h"
 #include "debug.h"
 #include "runtime_error.h"
+#if defined(__SWITCH2__)
+#include "clock.h"   // (g_targetFrameRate)
+#endif
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -123,7 +126,14 @@ void GL::InitGL()
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	// The scene renders into its own depth/stencil FBOs. The window only
+	// receives the depth-test-free present quad and ImGui, so a default
+	// depth/stencil buffer would be unused memory.
+	glfwWindowHint(GLFW_DEPTH_BITS, 0);
+	glfwWindowHint(GLFW_STENCIL_BITS, 0);
 	glfwWindowHint(GLFW_AUTO_ICONIFY, g_fAutoIconify ? GLFW_TRUE : GLFW_FALSE);
+	// (test aid: SLY1_HIDDENWINDOW=1, a run whose window is never shown, as Sly 2's SLY2N_HIDDENWINDOW)
+	if (std::getenv("SLY1_HIDDENWINDOW") != nullptr) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
 	width  = 1280;
 	height = 720;
@@ -165,6 +175,7 @@ void GL::InitGL()
 			"GLAD could not load the required OpenGL functions. Update the graphics driver and verify OpenGL 4.3 support.");
 		throw std::runtime_error("OpenGL function loading failed.");
 	}
+	glstate::Sync();
 
 	// GLFW window dimensions are logical screen coordinates and can differ
 	// from the drawable pixel dimensions on a DPI-scaled display. Initialize
@@ -187,6 +198,7 @@ void GL::InitGL()
 	presentHeight = framebufferHeight;
 	aspectRatio = width / height;
 
+#ifndef CANE_DEKO3D
 	const char* glVendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
 	const char* glRenderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
 	const char* glVersion = reinterpret_cast<const char*>(glGetString(GL_VERSION));
@@ -208,8 +220,8 @@ void GL::InitGL()
 	glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &maxSsboBindings);
 	glGetIntegerv(GL_MAX_VERTEX_OUTPUT_COMPONENTS, &maxVertexOutputComponents);
 
-	constexpr GLint kRequiredVertexSsboBlocks = 10;
-	constexpr GLint kRequiredCombinedSsboBlocks = 11;
+	constexpr GLint kRequiredVertexSsboBlocks = 12;
+	constexpr GLint kRequiredCombinedSsboBlocks = 13;
 	constexpr GLint kRequiredSsboBindings = 14;
 	constexpr GLint kRequiredVertexOutputComponents = 48;
 	if (maxVertexSsboBlocks < kRequiredVertexSsboBlocks ||
@@ -227,11 +239,16 @@ void GL::InitGL()
 			maxVertexOutputComponents, kRequiredVertexOutputComponents);
 		throw std::runtime_error("GPU shader resource limits are insufficient.");
 	}
+#endif
 
 	// ========== ImGui Setup ==========
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO();
+	// Keep ImGui's window layout with the user's files, not in the working
+	// directory (the possibly read-only runtime folder when launched).
+	static const std::string s_imguiIni = cane::Utf8(cane::UserDirectory() / "imgui.ini");
+	io.IniFilename = s_imguiIni.c_str();
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init("#version 430");
 	ImGui::StyleColorsDark();
@@ -270,6 +287,24 @@ void GL::InitGL()
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 
+	glBindVertexArray(0);
+
+	// ========== Draw-record index ==========
+	// Draws pass their record index as the base instance. With divisor 1 the
+	// attribute then reads drawIndex[baseInstance], which equals that index.
+	{
+		std::vector<GLuint> drawIndices(DRAW_INDEX_COUNT);
+		for (int i = 0; i < DRAW_INDEX_COUNT; ++i)
+			drawIndices[i] = static_cast<GLuint>(i);
+
+		glGenBuffers(1, &drawIndexVbo);
+		glBindBuffer(GL_ARRAY_BUFFER, drawIndexVbo);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(GLuint) * DRAW_INDEX_COUNT, drawIndices.data(), GL_STATIC_DRAW);
+	}
+
+	glGenVertexArrays(1, &celVao);
+	glBindVertexArray(celVao);
+	BindDrawIndexAttribute();
 	glBindVertexArray(0);
 
 	// ========== Batched font geometry ==========
@@ -342,6 +377,7 @@ void GL::InitGL()
 	glEnableVertexAttribArray(3);
 	glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(SQTRGPU),
 		reinterpret_cast<void*>(offsetof(SQTRGPU, uv)));
+	BindDrawIndexAttribute();
 	glBindVertexArray(0);
 
 	glViewport(0, 0, width, height - imguiOffset);
@@ -394,11 +430,10 @@ void GL::InitGL()
 	glslDyshfSkin        = glGetUniformLocation(glDyshadow.ID, "fSkin");
 
 	glGlobShader.Init("glob.vert", NULL, "glob.frag");
-	ropStream.bindIndex = 1;
+	// GL guarantees SSBO ranges of at least 16 MB.
+	InitArrayStream(&ropStream, ROGL_SSBO_BINDING, sizeof(ROGL), GLsizeiptr(16 << 20) / GLsizeiptr(sizeof(ROGL)));
+	InitArrayStream(&drawStream, DRAW_SSBO_BINDING, sizeof(DRAWGL), DRAW_INDEX_COUNT);
 	GLint align = 256;
-	glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &align);
-
-	ropStream.stride = (sizeof(ROGL) + align - 1) & ~(align - 1);
 	glGlobShader.Use();
 
 	glslLsmShadow  = glGetUniformLocation(glGlobShader.ID, "swp.uShadow");
@@ -409,17 +444,9 @@ void GL::InitGL()
 	glslFogMax     = glGetUniformLocation(glGlobShader.ID, "swp.fogMax");
 	glslFogColor   = glGetUniformLocation(glGlobShader.ID, "swp.fogColor");
 
-	glslfAlphaTest  = glGetUniformLocation(glGlobShader.ID, "fAlphaTest");
 	glslAlphaCutOff = glGetUniformLocation(glGlobShader.ID, "alphaCutOff");
-
-	glslRko              = glGetUniformLocation(glGlobShader.ID, "rko");
-	glslProjectedVolumeColor = glGetUniformLocation(glGlobShader.ID, "projectedVolumeColor");
-	glslProjectedVolumeFinalPass = glGetUniformLocation(glGlobShader.ID, "projectedVolumeFinalPass");
-	glslfAnimateUv       = glGetUniformLocation(glGlobShader.ID, "fAnimateUv");
-	glsluvOffsets		 = glGetUniformLocation(glGlobShader.ID, "uvOffsets");
-	glslUnSelfIllum		 = glGetUniformLocation(glGlobShader.ID, "unSelfIllum");
-	glslSubGlobPosCenter = glGetUniformLocation(glGlobShader.ID, "subGlobPosCenter");
-	glslSubGlobRadius    = glGetUniformLocation(glGlobShader.ID, "subGlobRadius");
+	glslShadowHalfTexel = glGetUniformLocation(glGlobShader.ID, "shadowHalfTexel");
+	glslFarDepth = glGetUniformLocation(glGlobShader.ID, "farDepth");
 
 	glslAmbientMap  = glGetUniformLocation(glGlobShader.ID, "ambientMap");
 	glslDiffuseMap  = glGetUniformLocation(glGlobShader.ID, "diffuseMap");
@@ -431,6 +458,8 @@ void GL::InitGL()
 	glUniform1i(glGetUniformLocation(glGlobShader.ID, "shadowTextureArray"), SHADOW_TEXTURE_UNIT);
 
 	glCelBorderShader.Init("celborder.vert", NULL, "celborder.frag");
+	// Cel borders append CELDRAWGL records to drawStream; rcbStream is unused
+	// and never allocated.
 	rcbStream.bindIndex = 1;
 	align = 256;
 	glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &align);
@@ -508,14 +537,12 @@ void GL::InitGL()
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	glslDyshfSkin = glGetUniformLocation(glDyshadow.ID, "fSkin");
-	glslfSkin     = glGetUniformLocation(glGlobShader.ID, "fSkin");
-	glslCelSkin   = glGetUniformLocation(glCelBorderShader.ID, "fSkin");
 
-	glslfPose       = glGetUniformLocation(glGlobShader.ID, "fPose");
 	glslPoseCount   = glGetUniformLocation(glGlobShader.ID, "poseCount");
 
-	glslCelPose        = glGetUniformLocation(glCelBorderShader.ID, "fPose");
+	glslPoseWeights = glGetUniformLocation(glGlobShader.ID, "poseWeights[0]");
 	glslCelPoseCount   = glGetUniformLocation(glCelBorderShader.ID, "poseCount");
+	glslCelPoseWeights = glGetUniformLocation(glCelBorderShader.ID, "poseWeights[0]");
 }
 
 void GL::CreateFramebuffers(int w, int h)
@@ -772,6 +799,8 @@ void GL::TerminateGL()
 	glDeleteBuffers(1, &blipInstanceVbo);
 	glDeleteVertexArrays(1, &sqtrVao);
 	glDeleteBuffers(1, &sqtrVbo);
+	glDeleteVertexArrays(1, &celVao);
+	glDeleteBuffers(1, &drawIndexVbo);
 
 	glDeleteVertexArrays(1, &lineVao);
 	glDeleteBuffers(1, &lineVbo);
@@ -779,6 +808,7 @@ void GL::TerminateGL()
 	DeleteFrameStream(&ropStream);
 	DeleteFrameStream(&rcbStream);
 	DeleteFrameStream(&blipStream);
+	DeleteFrameStream(&drawStream);
 	glDeleteBuffers(1, &geomUBO);
 	glDeleteBuffers(1, &cmUBO);
 
@@ -808,86 +838,165 @@ void InitCameraUbo()
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, cmUBO);
 }
 
-void InitFrameStream(STREAM* pstream, int streamSize)
+#ifndef GL_MAP_PERSISTENT_BIT
+#define GL_MAP_PERSISTENT_BIT 0x0040
+#endif
+#ifndef GL_MAP_COHERENT_BIT
+#define GL_MAP_COHERENT_BIT 0x0080
+#endif
+
+namespace
 {
-	if (!pstream->fences)
-		pstream->fences = (GLsync*)calloc(g_frames, sizeof(GLsync));
+// The bundled glad loader stops at GL 4.3, so glBufferStorage (GL 4.4 /
+// ARB_buffer_storage) is loaded by hand.
+typedef void (APIENTRYP PFNCANEBUFFERSTORAGEPROC)(GLenum target, GLsizeiptr size, const void* data, GLbitfield flags);
+PFNCANEBUFFERSTORAGEPROC s_pfnBufferStorage = nullptr;
+int s_bufferStorageState = -1; // -1 unknown, 0 unavailable, 1 available
 
-	if (pstream->bufferObject == 0)
-		glGenBuffers(1, &pstream->bufferObject);
+// One fence per frame slot covers every stream. s_streamFences[f % g_frames]
+// is created at the start of stream frame f and fences all GL work queued by
+// the frames before it.
+std::vector<GLsync> s_streamFences;
+uint64_t s_streamFrame = 0;
+int s_cstreamMapped = 0; // persistently mapped stream buffers
 
-	glBindBuffer(GL_UNIFORM_BUFFER, pstream->bufferObject);
+bool FBufferStorageAvailable()
+{
+	if (s_bufferStorageState < 0)
+	{
+		s_bufferStorageState = 0;
+		const bool fSupported = GLVersion.major > 4 || (GLVersion.major == 4 && GLVersion.minor >= 4) ||
+			glfwExtensionSupported("GL_ARB_buffer_storage");
+		if (fSupported)
+		{
+			s_pfnBufferStorage = reinterpret_cast<PFNCANEBUFFERSTORAGEPROC>(glfwGetProcAddress("glBufferStorage"));
+			if (s_pfnBufferStorage != nullptr)
+				s_bufferStorageState = 1;
+		}
+	}
 
-	GLsizeiptr perFrameBytes = (GLsizeiptr)streamSize * pstream->stride;
-	GLsizeiptr totalSize = (GLsizeiptr)g_frames * perFrameBytes;
+	return s_bufferStorageState == 1;
+}
 
-	glBufferData(GL_UNIFORM_BUFFER, totalSize, nullptr, GL_STREAM_DRAW);
+void ReleaseStreamBuffer(STREAM* pstream)
+{
+	if (pstream->bufferObject)
+	{
+		if (pstream->mappedPtr)
+		{
+			glBindBuffer(GL_UNIFORM_BUFFER, pstream->bufferObject);
+			glUnmapBuffer(GL_UNIFORM_BUFFER);
+			pstream->mappedPtr = nullptr;
+
+			// The fences only guard slots of live mapped stream buffers.
+			if (--s_cstreamMapped == 0)
+			{
+				for (GLsync& fence : s_streamFences)
+				{
+					if (fence)
+						glDeleteSync(fence);
+					fence = nullptr;
+				}
+			}
+		}
+
+		// GL keeps the storage alive for draws that are still queued.
+		glDeleteBuffers(1, &pstream->bufferObject);
+		pstream->bufferObject = 0;
+	}
 
 	pstream->frameBase = 0;
 	pstream->cursor    = 0;
-	pstream->frameSize = perFrameBytes;
+	pstream->frameSize = 0;
 }
 
-void BeginFrameStream(STREAM* pstream)
+void CreateStreamBuffer(STREAM* pstream, GLsizeiptr cappend)
 {
-	int slot = g_cframe % g_frames;
+	// Immutable storage cannot be respecified, so always start from a new buffer.
+	ReleaseStreamBuffer(pstream);
 
-	GLsync s = pstream->fences[slot];
-	if (s)
-	{
-		// poll
-		GLenum r = glClientWaitSync(s, 0, 0);
-		if (r == GL_TIMEOUT_EXPIRED)
-		{
-			// only stall if we have to
-			glClientWaitSync(s, GL_SYNC_FLUSH_COMMANDS_BIT, GL_TIMEOUT_IGNORED);
-		}
-		glDeleteSync(s);
-		pstream->fences[slot] = nullptr;
-	}
-
-	pstream->frameBase = (GLsizeiptr)slot * pstream->frameSize;
-	pstream->cursor = 0;
-	pstream->mappedPtr = nullptr;
-	pstream->staging.resize(static_cast<size_t>(pstream->frameSize));
-}
-
-GLsizeiptr StageFrameStream(STREAM* pstream, const void* ptr, int copySize)
-{
-	if (copySize < 0 || copySize > pstream->stride ||
-		pstream->cursor + pstream->stride > pstream->frameSize)
-	{
-		__debugbreak();
-		return -1;
-	}
-
-	const GLsizeiptr offset = pstream->frameBase + pstream->cursor;
-	uint8_t* destination = pstream->staging.data() + pstream->cursor;
-	std::memcpy(destination, ptr, static_cast<size_t>(copySize));
-	if (copySize < pstream->stride)
-		std::memset(destination + copySize, 0,
-			static_cast<size_t>(pstream->stride - copySize));
-
-	pstream->cursor += pstream->stride;
-	return offset;
-}
-
-void UploadFrameStream(STREAM* pstream)
-{
-	if (pstream->cursor == 0)
+	// Slot bases must also be valid SSBO range offsets, whose alignment GL
+	// caps at 256 bytes.
+	pstream->frameSize = (cappend * pstream->stride + 255) & ~GLsizeiptr(255);
+	if (pstream->frameSize <= 0)
 		return;
 
-	// BeginFrameStream retired this slot's previous fence, so the whole range
-	// is CPU-owned until EndFrameStream fences the draws that consume it.
+	const GLsizeiptr totalSize = (GLsizeiptr)g_frames * pstream->frameSize;
+
+	glGenBuffers(1, &pstream->bufferObject);
 	glBindBuffer(GL_UNIFORM_BUFFER, pstream->bufferObject);
-	glBufferSubData(GL_UNIFORM_BUFFER, pstream->frameBase, pstream->cursor, pstream->staging.data());
+
+	if (FBufferStorageAvailable())
+	{
+		const GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+		s_pfnBufferStorage(GL_UNIFORM_BUFFER, totalSize, nullptr, flags);
+		pstream->mappedPtr = static_cast<uint8_t*>(glMapBufferRange(GL_UNIFORM_BUFFER, 0, totalSize, flags));
+		if (pstream->mappedPtr)
+		{
+			s_cstreamMapped++;
+			return;
+		}
+
+		glDeleteBuffers(1, &pstream->bufferObject);
+		glGenBuffers(1, &pstream->bufferObject);
+		glBindBuffer(GL_UNIFORM_BUFFER, pstream->bufferObject);
+	}
+
+	glBufferData(GL_UNIFORM_BUFFER, totalSize, nullptr, GL_STREAM_DRAW);
+}
 }
 
-void BindFrameStreamRange(STREAM* pstream, GLsizeiptr offset, int size)
+void InitFrameStream(STREAM* pstream, int streamSize)
 {
-	if (offset >= 0)
-		glBindBufferRange(GL_UNIFORM_BUFFER, pstream->bindIndex,
-			pstream->bufferObject, offset, size);
+	CreateStreamBuffer(pstream, streamSize);
+}
+
+void AdvanceFrameStreams()
+{
+	s_streamFrame++;
+
+	// glBufferSubData is already ordered against queued draws, so only the
+	// persistently mapped path needs fences. Fence and wait here, at the start
+	// of the frame, where few commands are queued: under glthread both calls
+	// drain the command queue.
+	if (s_cstreamMapped == 0)
+		return;
+
+	if (s_streamFences.size() != static_cast<size_t>(g_frames))
+		s_streamFences.assign(g_frames, nullptr);
+
+	const uint64_t cframes = static_cast<uint64_t>(g_frames);
+	GLsync fenceNew = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+
+	// This frame overwrites the slot last written g_frames frames ago. The
+	// fence created g_frames - 1 frames ago follows all of that frame's work.
+	GLsync& fenceSlot = s_streamFences[(s_streamFrame + 1) % cframes];
+	if (fenceSlot)
+	{
+		glClientWaitSync(fenceSlot, GL_SYNC_FLUSH_COMMANDS_BIT, GL_TIMEOUT_IGNORED);
+		glDeleteSync(fenceSlot);
+		fenceSlot = nullptr;
+	}
+
+	GLsync& fenceCur = s_streamFences[s_streamFrame % cframes];
+	if (fenceCur)
+		glDeleteSync(fenceCur);
+	fenceCur = fenceNew;
+}
+
+void BeginFrameStream(STREAM* pstream, int cappend)
+{
+	// cappend bounds this frame's appends. Growing here, before the first one,
+	// keeps every range already bound in the old buffer, which GL keeps alive.
+	if ((GLsizeiptr)cappend * pstream->stride > pstream->frameSize)
+	{
+		const GLsizeiptr cappendCur = pstream->frameSize / pstream->stride;
+		CreateStreamBuffer(pstream, (std::max)((GLsizeiptr)cappend, cappendCur + cappendCur / 2));
+	}
+
+	const int slot = static_cast<int>(s_streamFrame % static_cast<uint64_t>(g_frames));
+	pstream->frameBase = (GLsizeiptr)slot * pstream->frameSize;
+	pstream->cursor = 0;
 }
 
 void AppendStream(STREAM* pstream, void* ptr, int size, int copySize)
@@ -901,58 +1010,105 @@ void AppendStream(STREAM* pstream, void* ptr, int size, int copySize)
 	GLsizeiptr off = pstream->frameBase + pstream->cursor;
 	pstream->cursor += pstream->stride;
 
-	// A non-persistently mapped buffer cannot legally be consumed by draw calls
-	// until it is unmapped. The old path kept this UBO mapped for the complete
-	// render pass; NVIDIA tolerated that, while AMD could observe stale or
-	// partially written object transforms. Upload each aligned range normally.
-	glBindBuffer(GL_UNIFORM_BUFFER, pstream->bufferObject);
-	glBufferSubData(GL_UNIFORM_BUFFER, off, copySize, ptr);
+	if (pstream->mappedPtr)
+	{
+		// Coherent persistent mapping: the write is visible to every later draw.
+		memcpy(pstream->mappedPtr + off, ptr, copySize);
+	}
+	else
+	{
+		glBindBuffer(GL_UNIFORM_BUFFER, pstream->bufferObject);
+		glBufferSubData(GL_UNIFORM_BUFFER, off, copySize, ptr);
+	}
+
 	glBindBufferRange(GL_UNIFORM_BUFFER, pstream->bindIndex, pstream->bufferObject, off, size);
 }
 
-void EndFrameStream(STREAM* pstream)
+namespace
 {
-	if (pstream->cursor == 0)
-		return;
+void BindArrayWindow(STREAM* pstream)
+{
+	const GLsizeiptr size = (std::min)(pstream->frameSize - pstream->windowBase, pstream->cwindow * pstream->stride);
+	glBindBufferRange(GL_SHADER_STORAGE_BUFFER, pstream->bindIndex, pstream->bufferObject,
+		pstream->frameBase + pstream->windowBase, size);
+	pstream->iwindow++;
+}
+}
 
-	int slot = g_cframe % g_frames;
+void InitArrayStream(STREAM* pstream, GLuint binding, GLsizeiptr stride, GLsizeiptr cwindow)
+{
+	pstream->bindIndex = binding;
+	pstream->stride = stride;
+	pstream->cwindow = cwindow;
+}
 
-	pstream->fences[slot] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+void BeginFrameArrayStream(STREAM* pstream, int cappend)
+{
+	BeginFrameStream(pstream, (std::max)(cappend, 1));
+	pstream->windowBase = 0;
+	BindArrayWindow(pstream);
+}
+
+// Returns the element's index in the bound range. Unlike AppendStream this
+// never fails: when the slot or the index window is full, the range moves (to
+// a larger buffer if needed) and the indices handed out so far stop being
+// valid for later draws, which callers detect through iwindow.
+int AppendArrayStream(STREAM* pstream, const void* ptr, int copySize)
+{
+	if (pstream->cursor - pstream->windowBase >= pstream->cwindow * pstream->stride)
+	{
+		// The range offset must stay 256-byte aligned for every driver.
+		while ((pstream->cursor & 255) != 0)
+			pstream->cursor += pstream->stride;
+		pstream->windowBase = pstream->cursor;
+	}
+
+	if (pstream->cursor + pstream->stride > pstream->frameSize)
+	{
+		// Draws queued so far keep the old buffer alive. This slot of the new
+		// buffer has never been used, so no fence guards it.
+		const GLsizeiptr cappendCur = pstream->frameSize / pstream->stride;
+		CreateStreamBuffer(pstream, (std::max)(cappendCur * 2, GLsizeiptr(64)));
+		const int slot = static_cast<int>(s_streamFrame % static_cast<uint64_t>(g_frames));
+		pstream->frameBase = (GLsizeiptr)slot * pstream->frameSize;
+		pstream->cursor = 0;
+		pstream->windowBase = 0;
+		BindArrayWindow(pstream);
+	}
+	else if (pstream->cursor == pstream->windowBase && pstream->cursor != 0)
+	{
+		BindArrayWindow(pstream);
+	}
+
+	const GLsizeiptr off = pstream->frameBase + pstream->cursor;
+	const int index = static_cast<int>((pstream->cursor - pstream->windowBase) / pstream->stride);
+	pstream->cursor += pstream->stride;
+
+	if (pstream->mappedPtr)
+	{
+		memcpy(pstream->mappedPtr + off, ptr, copySize);
+	}
+	else
+	{
+		glBindBuffer(GL_UNIFORM_BUFFER, pstream->bufferObject);
+		glBufferSubData(GL_UNIFORM_BUFFER, off, copySize, ptr);
+	}
+
+	return index;
 }
 
 void DeleteFrameStream(STREAM* pstream)
 {
-	if (pstream->fences)
-	{
-		for (int i = 0; i < g_frames; i++)
-		{
-			if (pstream->fences[i])
-				glDeleteSync(pstream->fences[i]);
-		}
+	ReleaseStreamBuffer(pstream);
+}
 
-		free(pstream->fences);
-		pstream->fences = nullptr;
-	}
-
-	if (pstream->bufferObject)
-	{
-		glBindBuffer(GL_UNIFORM_BUFFER, pstream->bufferObject);
-
-		if (pstream->mappedPtr)
-		{
-			glUnmapBuffer(GL_UNIFORM_BUFFER);
-			pstream->mappedPtr = nullptr;
-		}
-
-		glDeleteBuffers(1, &pstream->bufferObject);
-		pstream->bufferObject = 0;
-	}
-
-	pstream->frameBase = 0;
-	pstream->cursor    = 0;
-	pstream->frameSize = 0;
-	pstream->staging.clear();
-	pstream->staging.shrink_to_fit();
+// Call with the target VAO bound.
+void BindDrawIndexAttribute()
+{
+	glBindBuffer(GL_ARRAY_BUFFER, g_gl.drawIndexVbo);
+	glVertexAttribIPointer(DRAW_INDEX_ATTRIBUTE, 1, GL_UNSIGNED_INT, sizeof(GLuint), nullptr);
+	glVertexAttribDivisor(DRAW_INDEX_ATTRIBUTE, 1);
+	glEnableVertexAttribArray(DRAW_INDEX_ATTRIBUTE);
 }
 
 bool ApplyMsaaSettings()
@@ -1256,9 +1412,18 @@ void FrameBufferSizeCallBack(GLFWwindow* window, int width, int height)
 	int sceneW = presentW;
 	int sceneH = presentH;
 
+	g_fInternalResolutionCapped = false;
 	if (g_internalResolutionHeight > 0)
 	{
 		sceneH = g_internalResolutionHeight;
+#if defined(__SWITCH2__)
+		// (at 120 fps, at most the picture's height; the setting applies again at 60)
+		if (g_targetFrameRate > 60 && sceneH > presentH)
+		{
+			sceneH = presentH;
+			g_fInternalResolutionCapped = true;
+		}
+#endif
 		// The original PS2 raster is explicitly 640x448. Other internal
 		// resolutions preserve the selected presentation aspect ratio.
 		if (sceneH == 448)
@@ -1330,6 +1495,7 @@ GL g_gl;
 GLuint cmUBO = 0;
 STREAM ropStream;
 STREAM rcbStream;
+STREAM drawStream;
 STREAM blipStream;
 GLuint geomUBO = 0;
 GLint glslBlipCurrentTime = -1;
@@ -1343,16 +1509,9 @@ GLuint glslFogNear = 0;
 GLuint glslFogFar = 0;
 GLuint glslFogMax = 0;
 GLuint glslFogColor = 0;
-GLuint glslfAlphaTest = 0;
 GLuint glslAlphaCutOff = 0;
-GLuint glslRko = 0;
-GLuint glslProjectedVolumeColor = 0;
-GLuint glslProjectedVolumeFinalPass = 0;
-GLuint glslfAnimateUv = 0;
-GLuint glsluvOffsets = 0;
-GLuint glslUnSelfIllum = 0;
-GLuint glslSubGlobPosCenter = 0;
-GLuint glslSubGlobRadius = 0;
+GLint glslShadowHalfTexel = -1;
+GLint glslFarDepth = -1;
 GLuint glslDyshMatWorldClip = 0;
 GLuint glslDyshModel = 0;
 GLuint glslDyshfSkin = 0;
@@ -1368,12 +1527,17 @@ GLuint g_sceneFbo = 0;
 int g_msaaSamples = 4;
 bool g_fMsaa = false;
 int g_internalResolutionHeight = 0;
+bool g_fInternalResolutionCapped = false;
 int g_resolutionScalePercent = 100;
 int g_monitorIndex = 0;
 int g_textureFiltering = 1;
 float g_outputGamma = 1.0f;
 float g_guiScale = 1.0f;
+#ifdef __SWITCH__
+GuiStyle g_guiStyle = GuiStyle_Modern;   // (the Switch's default: cane::settings::defaults)
+#else
 GuiStyle g_guiStyle = GuiStyle_PS2;
+#endif
 WindowMode g_windowMode = WindowMode_Windowed;
 bool g_fAutoIconify = false;
 float g_drawDistanceMultiplier = 1.0f;
@@ -1384,9 +1548,8 @@ float s_dxDisplayOriginal;
 float s_dyDisplayOriginal;
 GLuint lineVao = 0;
 GLuint lineVbo = 0;
-GLuint glslfSkin = 0;
-GLint glslCelSkin = 0;
-GLuint glslfPose = 0;
 GLuint glslPoseCount = 0;
+GLuint glslPoseWeights = 0;
 GLuint glslCelPose = 0;
 GLuint glslCelPoseCount = 0;
+GLuint glslCelPoseWeights = 0;

@@ -1,4 +1,11 @@
 #version 430 core
+#ifdef DEKO3D
+invariant gl_Position;
+precise gl_Position;
+#define EDGE_POSITION vec4
+#else
+#define EDGE_POSITION vec3
+#endif
 
 
 layout(std140, binding = 0) uniform CMGL
@@ -7,12 +14,31 @@ layout(std140, binding = 0) uniform CMGL
     vec4 cameraPos;
 } cm;
 
-layout(std140, binding = 1) uniform ROCEL
+// Instanced with divisor 1 and drawn with base instance = record index.
+layout (location = 6) in uint drawIndex;
+
+// Mirrors CELDRAWGL in gl.h. Shares the draw-record stream (and its array
+// stride) with the glob program's DRAW records.
+struct CELDRAW
 {
-    mat4 model;
-    vec4 celRgba;
+    mat4  model;
+    vec4  celRgba;
     float uAlphaCelBorder;
-} cbp;
+    int   fSkin;
+    int   fPose;
+    int   pad0;
+    vec4  pad1;
+};
+
+layout(std430, binding = 1) restrict readonly buffer DRAWBLK
+{
+    CELDRAW draws[];
+};
+
+#define cbp draws[drawIndex]
+
+flat out vec4  vCelRgba;
+flat out float vAlphaCelBorder;
 
 struct CELPOINT
 {
@@ -36,21 +62,26 @@ layout(std430, binding = 12) readonly buffer EDGEPOSEPOSBLK
     vec4 edgePoseDpos[];
 };
 
-layout(std430, binding = 14) readonly buffer POSEWEIGHTBLK
-{
-    float poseWeights[];
-};
+// Pose weights are per-draw uniforms (render.cpp); MAX_POSES matches it.
+#define MAX_POSES 64
+uniform float poseWeights[MAX_POSES];
 
-uniform int fSkin;
-uniform int fPose;
+int fSkin;
+int fPose;
 uniform int poseCount;
 
 void CullVertex();
 float Cross2D(vec2 a, vec2 b);
-vec3 GetEdgePosition(int pointIndex);
+EDGE_POSITION GetEdgePosition(int pointIndex);
 
 void main()
 {
+    // Before any early return: a line with one culled vertex is still drawn.
+    vCelRgba = cbp.celRgba;
+    vAlphaCelBorder = cbp.uAlphaCelBorder;
+    fSkin = cbp.fSkin;
+    fPose = cbp.fPose;
+
     int edgeID = gl_VertexID >> 1;
     bool first = (gl_VertexID & 1) == 0;
     int pointBase = edgeID * 4;
@@ -61,6 +92,17 @@ void main()
         return;
     }
 
+#ifdef DEKO3D
+    // glob.vert's exact transform (skin matrix, model, world to clip), so an outline has its surface's depth.
+    vec4 E0 = cbp.model * GetEdgePosition(pointBase + 0);
+    vec4 E1 = cbp.model * GetEdgePosition(pointBase + 1);
+    vec4 OA = cbp.model * GetEdgePosition(pointBase + 2);
+    vec4 OB = cbp.model * GetEdgePosition(pointBase + 3);
+    precise vec4 A = cm.matWorldToClip * E0;
+    precise vec4 B = cm.matWorldToClip * E1;
+    precise vec4 C = cm.matWorldToClip * OA;
+    precise vec4 D = cm.matWorldToClip * OB;
+#else
     vec3 E0 = GetEdgePosition(pointBase + 0);
     vec3 E1 = GetEdgePosition(pointBase + 1);
     vec3 OA = GetEdgePosition(pointBase + 2);
@@ -72,6 +114,7 @@ void main()
     vec4 B = mvp * vec4(E1, 1.0);
     vec4 C = mvp * vec4(OA, 1.0);
     vec4 D = mvp * vec4(OB, 1.0);
+#endif
 
     if (A.w <= 0.0 || B.w <= 0.0 || C.w <= 0.0 || D.w <= 0.0)
     {
@@ -106,14 +149,14 @@ float Cross2D(vec2 a, vec2 b)
     return a.x * b.y - a.y * b.x;
 }
 
-vec3 GetEdgePosition(int pointIndex)
+EDGE_POSITION GetEdgePosition(int pointIndex)
 {
     CELPOINT point = edgePoints[pointIndex];
     vec4 position = point.position;
 
     if (fPose != 0)
     {
-        int count = min(max(poseCount, 0), poseWeights.length());
+        int count = min(max(poseCount, 0), MAX_POSES);
         int poseBase = pointIndex * poseCount;
 
         for (int ipose = 0; ipose < count; ++ipose)
@@ -128,41 +171,65 @@ vec3 GetEdgePosition(int pointIndex)
     }
 
     if (fSkin == 0)
-        return position.xyz;
+        return EDGE_POSITION(position);
 
     if (pointIndex < 0 || pointIndex >= edgePoints.length())
-        return position.xyz;
+        return EDGE_POSITION(position);
 
     uvec4 indices = point.boneIndices;
     vec4 weights = point.boneWeights;
     vec4 localPosition = vec4(position.xyz, 1.0);
+#ifdef DEKO3D
+    mat4 matSkin = mat4(0.0);
+#else
     vec4 skinnedPosition = vec4(0.0);
+#endif
     float totalWeight = 0.0;
     int boneCount = boneMatrices.length();
 
     if (weights.x != 0.0 && indices.x < uint(boneCount))
     {
+#ifdef DEKO3D
+        matSkin += boneMatrices[indices.x] * weights.x;
+#else
         skinnedPosition += boneMatrices[indices.x] * localPosition * weights.x;
+#endif
         totalWeight += weights.x;
     }
 
     if (weights.y != 0.0 && indices.y < uint(boneCount))
     {
+#ifdef DEKO3D
+        matSkin += boneMatrices[indices.y] * weights.y;
+#else
         skinnedPosition += boneMatrices[indices.y] * localPosition * weights.y;
+#endif
         totalWeight += weights.y;
     }
 
     if (weights.z != 0.0 && indices.z < uint(boneCount))
     {
+#ifdef DEKO3D
+        matSkin += boneMatrices[indices.z] * weights.z;
+#else
         skinnedPosition += boneMatrices[indices.z] * localPosition * weights.z;
+#endif
         totalWeight += weights.z;
     }
 
     if (weights.w != 0.0 && indices.w < uint(boneCount))
     {
+#ifdef DEKO3D
+        matSkin += boneMatrices[indices.w] * weights.w;
+#else
         skinnedPosition += boneMatrices[indices.w] * localPosition * weights.w;
+#endif
         totalWeight += weights.w;
     }
 
+#ifdef DEKO3D
+    return totalWeight > 0.0 ? matSkin * localPosition : position;
+#else
     return totalWeight > 0.0 ? skinnedPosition.xyz : position.xyz;
+#endif
 }

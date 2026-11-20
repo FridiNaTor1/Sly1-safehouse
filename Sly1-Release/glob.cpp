@@ -347,10 +347,11 @@ void LoadGlobsetFromBrx(GLOBSET* pglobset, ALO* palo, CBinaryInputStream* pbis)
 
                 // 2) Allocate final CPU arrays once (no insert() / no reallocation)
                 std::vector <VERTICE>  packedVerts(totalVerts);
-                std::vector <uint16_t> packedIdx(totalIndices);
+                // 32-bit indices: render.cpp's batched draws use GL_UNSIGNED_INT.
+                std::vector <uint32_t> packedIdx(totalIndices);
 
                 VERTICE*  vptr = packedVerts.data();
-                uint16_t* iptr = packedIdx.data();
+                uint32_t* iptr = packedIdx.data();
 
                 uint32_t vOffset = 0;
                 uint32_t iOffset = 0;
@@ -391,7 +392,7 @@ void LoadGlobsetFromBrx(GLOBSET* pglobset, ALO* palo, CBinaryInputStream* pbis)
 
                 glGenBuffers(1, &glob.EBO);
                 glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, glob.EBO);
-                glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(packedIdx.size() * sizeof(uint16_t)), packedIdx.data(), GL_STATIC_DRAW);
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(packedIdx.size() * sizeof(uint32_t)), packedIdx.data(), GL_STATIC_DRAW);
 
                 // 5) Vertex attributes ONCE (your exact layout)
                 glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VERTICE), (void*)offsetof(VERTICE, pos));
@@ -411,6 +412,8 @@ void LoadGlobsetFromBrx(GLOBSET* pglobset, ALO* palo, CBinaryInputStream* pbis)
 
                 glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(VERTICE), (void*)offsetof(VERTICE, boneWeights));
                 glEnableVertexAttribArray(5);
+
+                BindDrawIndexAttribute();
 
                 glBindVertexArray(0);
 
@@ -555,6 +558,32 @@ void LoadGlobsetFromBrx(GLOBSET* pglobset, ALO* palo, CBinaryInputStream* pbis)
 
     }
 
+    // From here on the GL buffers hold the geometry. Instanced globs above were
+    // the last users of the CPU copies, except the LOOKER UV hit test, warp
+    // globs (clones rebuild their base positions) and the developer
+    // export/debug tools. Clones would otherwise deep-copy them.
+    if (!g_fDeveloperDebugMode)
+    {
+        for (GLOB& glob : pglobset->aglob)
+        {
+            if (glob.psaa != nullptr && glob.psaa->saak == SAAK_Looker)
+                continue;
+            if (glob.pwrbg != nullptr)
+                continue;
+
+            for (SUBGLOB& subglob : glob.asubglob)
+            {
+                std::vector<VERTICE>().swap(subglob.vertices);
+                std::vector<INDICE>().swap(subglob.indices);
+            }
+
+            std::vector<glm::vec4>().swap(glob.poseDpos);
+            std::vector<glm::vec4>().swap(glob.poseDnormal);
+            std::vector<CELPOINT>().swap(glob.edgePoints);
+            std::vector<glm::vec4>().swap(glob.edgePoseDpos);
+        }
+    }
+
     BuildGlobsetSaaArray(pglobset);
 }
 
@@ -636,10 +665,8 @@ void CloneGlob(GLOBSET* pglobset, GLOB* pglob, GLOBI* pglobi)
 
     if (pglob->fThreeWay == 1 && pglob->fDynamic == 0 && pglob->pwarpGlob == nullptr)
     {
-        uint32_t totalVerts = 0;
-
-        for (auto& subglob : pglob->asubglob)
-            totalVerts += (uint32_t)subglob.vertices.size();
+        // poseVertexCount is the vertex count of the VBO shared with the base.
+        const uint32_t totalVerts = static_cast<uint32_t>(pglob->poseVertexCount);
 
         pglob->trlk = TRLK_Relight;
 
@@ -728,10 +755,9 @@ void CloneGlobset(GLOBSET* pglobset, ALO* palo, GLOBSET* pglobsetBase)
 
         if (glob.fThreeWay == 1 && glob.fDynamic == 0 && glob.pwarpGlob == nullptr)
         {
-            size_t totalVerts = 0;
-
-            for (const SUBGLOB& subglob : glob.asubglob)
-                totalVerts += subglob.vertices.size();
+            // poseVertexCount is the vertex count of the shared VBO; the base's
+            // CPU vertices are released after load.
+            const size_t totalVerts = static_cast<size_t>(glob.poseVertexCount);
 
             glob.trlk = TRLK_Relight;
 
@@ -775,7 +801,8 @@ void PostGlobsetLoad(GLOBSET* pglobset, ALO* palo)
         ApplyWrGlob(pwr, palo, wrbg->pglob);
     }
 
-    UploadGlobsetPoseWeights(pglobset);
+    // Pose weights reach the shaders as per-draw uniforms (render.cpp), so
+    // the SSBO upload (UploadGlobsetPoseWeights) is not used.
 
     if (pglobset->cbnd <= 0)
         return;
@@ -793,6 +820,10 @@ void PostGlobsetLoad(GLOBSET* pglobset, ALO* palo)
 
 void UploadGlobsetPoseWeights(GLOBSET* pglobset)
 {
+    // SafeHouse: pose weights reach the shaders as per-draw uniforms
+    // (render.cpp), so no SSBO is kept (avoids a per-frame buffer update).
+    (void)pglobset;
+    return;
     if (pglobset == nullptr || pglobset->agPoses.empty())
         return;
 
