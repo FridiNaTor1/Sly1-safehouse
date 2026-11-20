@@ -19,6 +19,7 @@
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/frame.h"
 #include "safehouse/launcher.h"
+#include "safehouse/mouseinput.h"
 #endif
 #include "safehouse/hudbox.h"
 #include <algorithm>
@@ -30,6 +31,25 @@
 
 namespace
 {
+#if defined(CANE_SAFEHOUSE)
+// Mouse menus: the rectangles DrawPrompt last drew each response in (blot pixels).
+struct PROMPTHIT { float x0, y0, x1, y1; int irespk; };
+PROMPTHIT s_ahit[32]{};
+int s_chit = 0;
+PRK s_prkHit = PRK_Nil;
+float s_tHit = -10.0f;
+
+int IrespkFromMouse(PRK prk)
+{
+	float mx = 0.0f, my = 0.0f;
+	if (prk != s_prkHit || g_clock.tReal - s_tHit > 0.25f || !MouseMenuCursor(&mx, &my))
+		return -1;
+	for (int i = 0; i < s_chit; ++i)
+		if (mx >= s_ahit[i].x0 && mx < s_ahit[i].x1 && my >= s_ahit[i].y0 && my < s_ahit[i].y1)
+			return s_ahit[i].irespk;
+	return -1;
+}
+#endif
 int s_iKeyboardBindingCapture = -1;
 bool s_fKeyboardBindingCaptureArmed = false;
 bool s_fControllerBindingCapture = false;
@@ -2469,6 +2489,39 @@ void UpdatePromptActive(PROMPT* pprompt, JOY* pjoy)
         pprompt->blots == BLOTS_Visible &&
         g_clock.tReal - pprompt->tBlots > 0.1f;
 
+#if defined(CANE_SAFEHOUSE)
+    // Mouse menus: hover highlights, a left click chooses, a right click goes back and the wheel moves the highlight.
+    if (promptResponseCount > 0 && promptResponses != nullptr)
+    {
+        const int iHover = IrespkFromMouse(prk);
+        if (iHover >= 0 && iHover < promptResponseCount && iHover != pprompt->irespk && FMouseMenuMoved())
+        {
+            pprompt->irespk = iHover;
+            StartSound(static_cast<SFXID>(121), nullptr, nullptr, nullptr, 3000.0f, 300.0f, 1.0f, 0.0f, 0.0f, nullptr, nullptr);
+        }
+        if (canAcceptInput && FMouseLeftPressed() && iHover >= 0 && iHover < promptResponseCount)
+        {
+            ConsumeMouseMenuClicks();
+            pprompt->irespk = iHover;
+            ExecutePrompt(pprompt);
+            return;
+        }
+        const int wheel = MouseWheelNotches();
+        if (wheel != 0 && promptData.fVertical != 0)
+        {
+            pprompt->irespk = (pprompt->irespk + (wheel > 0 ? promptResponseCount - 1 : 1)) % promptResponseCount;
+            StartSound(static_cast<SFXID>(121), nullptr, nullptr, nullptr, 3000.0f, 300.0f, 1.0f, 0.0f, 0.0f, nullptr, nullptr);
+            return;
+        }
+    }
+    if (canAcceptInput && FMouseRightPressed())
+    {
+        ConsumeMouseMenuClicks();
+        CancelPrompt(pprompt);
+        return;
+    }
+#endif
+
     if (promptResponseCount > 0)
     {
         const int selectionDelta = promptData.fVertical != 0 ? pjoy->DySelectionJoy(g_clock.tReal) : pjoy->DxSelectionJoy(g_clock.tReal);
@@ -2785,6 +2838,11 @@ void DrawPrompt(PROMPT* pprompt)
 
     float cursorX = x;
     float cursorY = y;
+#if defined(CANE_SAFEHOUSE)
+    s_chit = 0;
+    s_prkHit = pprompt->prk;
+    s_tHit = g_clock.tReal;
+#endif
 
     // The original prompt was designed for short menus. Keep long PC settings
     // and mapping menus within that layout and scroll around the selection.
@@ -2872,6 +2930,14 @@ void DrawPrompt(PROMPT* pprompt)
         selectedText.Draw(&textBox, nullptr);
 
         pprompt->pfont->PopScaling();
+
+#if defined(CANE_SAFEHOUSE)
+        // The mouse's target: the whole row of a vertical menu, the word otherwise.
+        if (s_chit < static_cast<int>(std::size(s_ahit)))
+            s_ahit[s_chit++] = prd.fVertical != 0
+                ? PROMPTHIT{ x, cursorY, x + dx, cursorY + baseLineHeight, i }
+                : PROMPTHIT{ cursorX - spaceWidth, cursorY, cursorX + unselectedWidth + spaceWidth, cursorY + baseLineHeight, i };
+#endif
 
         if (prd.fVertical == 0)
             cursorX += unselectedWidth + spaceWidth * 2.0f;

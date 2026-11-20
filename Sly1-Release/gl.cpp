@@ -9,6 +9,7 @@
 #if defined(CANE_SAFEHOUSE)
 #include <safehouse/render/imgui_gl.h>
 #include "safehouse/settings.h"
+#include "safehouse/mouseinput.h"
 #endif
 #if defined(__SWITCH2__)
 #include "clock.h"   // (g_targetFrameRate)
@@ -59,6 +60,9 @@ void GlfwErrorCallback(int error, const char* description)
 
 void WindowFocusCallback(GLFWwindow* window, int focused)
 {
+#if defined(CANE_SAFEHOUSE)
+	MouseFocusChanged();
+#endif
 	if (focused == GLFW_FALSE && g_fAutoIconify &&
 		glfwGetTime() >= s_autoIconifySuppressedUntil &&
 		glfwGetWindowAttrib(window, GLFW_ICONIFIED) == GLFW_FALSE)

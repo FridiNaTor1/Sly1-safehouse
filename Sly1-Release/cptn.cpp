@@ -7,6 +7,10 @@
 #include "mouse.h"
 #include "gl.h"
 #include "binoc.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/mouseinput.h"
+#include "safehouse/pcinput.h"
+#endif
 namespace
 {
 bool s_fMouseCameraCaptured = false;
@@ -235,6 +239,14 @@ void UpdateCptn(CPTN* pcptn, CPDEFI* pcpdefi, JOY* pjoy, float dt)
 	const float radManualPrev = pcptn->radManual;
 	float radManual = radManualPrev;
 	float mouseOrbit = 0.0f;
+#if defined(CANE_SAFEHOUSE)
+	// The mouse (mouseinput.h: captured while playing, its sensitivity and inversion): a direct orbit angle while
+	// the player has control (pjoy is g_joyZero in cutscenes). An increasing radManual turns the view left, so
+	// mouse right subtracts.
+	(void)s_fMouseCameraCaptured;
+	if ((grftnd & FTND_Manual) != 0 && FMouseCameraJoy(pjoy))
+		mouseOrbit = -MouseCameraOrbit();
+#else
 	if (g_fMouseCamera && (grftnd & FTND_Manual) != 0 &&
 		g_binoc.fActive == 0 &&
 		g_gl.window != nullptr && !g_fDisableInput &&
@@ -259,6 +271,7 @@ void UpdateCptn(CPTN* pcptn, CPDEFI* pcpdefi, JOY* pjoy, float dt)
 		s_fMouseCameraCaptured = false;
 		MOUSE::ResetDelta();
 	}
+#endif
 
 	if (pjoy->IsPressed(BTN_R3) && (grftnd & FTND_Manual) != 0)
 	{
@@ -309,7 +322,14 @@ void UpdateCptn(CPTN* pcptn, CPDEFI* pcpdefi, JOY* pjoy, float dt)
 		pcptn->tLastOrbit = g_clock.t;
 	}
 
-	if (pcptn->ftnd == FTND_Manual &&
+#if defined(CANE_SAFEHOUSE)
+	// Auto Camera Rotation off: no passive steering in player-controlled camera zones. Authored camera directions,
+	// explicit look targets, cuts and the player's R3 recenter still go through their own paths.
+	const bool fAutoRotate = g_fAutoCameraRotation || (grftnd & FTND_Manual) == 0 || (ptn != nullptr && ptn->paloTarget != nullptr);
+#else
+	constexpr bool fAutoRotate = true;
+#endif
+	if (fAutoRotate && pcptn->ftnd == FTND_Manual &&
 		!(pjoy->IsPressed(BTN_R3) && (grftnd & FTND_Manual) != 0) &&
 		!((grftnd & FTND_Manual) != 0 &&
 		  (pjoy->uDeflect2 > 0.0f || mouseOrbit != 0.0f ||

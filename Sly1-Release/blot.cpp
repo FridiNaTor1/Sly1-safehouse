@@ -5,6 +5,10 @@
 #include "mb.h"
 #include "gl.h"
 #include "safehouse/hudbox.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/prompt_glyphs.h"
+#include <string>
+#endif
 
 void InitBlot(BLOT* pblot, BLOTK blotk)
 {
@@ -600,6 +604,17 @@ void DrawBlot(BLOT* pblot)
         pblot->rFontScale * scaleY);
 
     // Draw the text using the current font and text box
+#if defined(CANE_SAFEHOUSE)
+    // ("Press START button": the button words as the controller's icons, prompt_glyphs.h; rich text draws them)
+    std::string text = pblot->achzDraw;
+    ReplaceButtonWords(text);
+    if (text != pblot->achzDraw)
+    {
+        CRichText rich(pblot->achzDraw, pblot->pfont);
+        rich.Draw(&tbx, nullptr);
+    }
+    else
+#endif
     pblot->pfont->DrawPchz(pblot->achzDraw, &tbx);
 
     // Pop font scale

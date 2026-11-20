@@ -1,5 +1,25 @@
 #include "font.h"
 #include <cmath>
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/prompt_glyphs.h"
+#include <algorithm>
+
+namespace
+{
+// Font 1 is the original controller ("joy") font. LoadFontsFromBrx sets
+// m_grffont = 1 << index, and CopyTo/PfontClone keep it, so the identity
+// survives rich-text font switches. Font 4 also has '_' and 'a' glyphs,
+// which is why the check is on the font, not on the character.
+constexpr uint32_t kgrffontJoy = 1U << 1;
+
+// Start and Select glyphs carry the words "Start"/"Select"; a controller
+// icon replacing them is drawn square instead.
+bool FWidePromptGlyph(char ch)
+{
+	return ch == '!' || ch == '_';
+}
+}
+#endif
 
 namespace
 {
@@ -292,6 +312,49 @@ namespace
 		glEnable(GL_DEPTH_TEST);
 		glBindVertexArray(0);
 	}
+
+#if defined(CANE_SAFEHOUSE)
+	// The controller font's glyph for the controller in use (prompt_glyphs.h), for the batched text paths: the
+	// button's own glyph is returned, or a prompt atlas icon is drawn in the glyph's cell after the batch so far and
+	// 0 returned.
+	uint32_t ChJoyGlyph(GlyphVertices& vertices, GLuint texture, bool nearest, CFontBrx* font, uint32_t codepoint,
+		float x, float y, const glm::vec4& color)
+	{
+		if ((font->m_grffont & kgrffontJoy) == 0 || codepoint >= 0x80)
+			return codepoint;
+		const PROMPTGLYPH prompt = PromptGlyphFor(static_cast<char>(codepoint));
+		if (prompt.kind != PROMPTGLYPH::Icon)
+			return static_cast<unsigned char>(prompt.ch);
+		FlushGlyphs(vertices, texture, nearest);
+		// As DxDrawPromptIcon: a line-height square centred in the cell, at full intensity for the GS colour 0x80.
+		const float dx = font->DxFromCh(static_cast<char>(codepoint));
+		const float dy = static_cast<float>(font->m_dyUnscaled) * font->m_ryScale;
+		const float side = (std::min)(dy, dx * 1.2f);
+		const glm::vec4 tint((std::min)(1.0f, color.r * 2.0f), (std::min)(1.0f, color.g * 2.0f),
+			(std::min)(1.0f, color.b * 2.0f), color.a);
+		const float left = x + (dx - side) * 0.5f, top = y + (dy - side) * 0.5f;
+		GlyphVertices icon;
+		AppendQuad(icon, left, top, left + side, top + side, prompt.u0, prompt.v1, prompt.u1, prompt.v0, tint);
+		FlushGlyphs(icon, prompt.texture, false);
+		return 0;
+	}
+	// A glyph's advance, matching ChJoyGlyph for the controller font.
+	float DxGlyph(CFontBrx* font, uint32_t codepoint)
+	{
+		return (font->m_grffont & kgrffontJoy) != 0 && codepoint < 0x80
+			? font->DxFromCh(static_cast<char>(codepoint))
+			: font->DxFromCodepoint(codepoint);
+	}
+#else
+	uint32_t ChJoyGlyph(GlyphVertices&, GLuint, bool, CFontBrx*, uint32_t codepoint, float, float, const glm::vec4&)
+	{
+		return codepoint;
+	}
+	float DxGlyph(CFontBrx* font, uint32_t codepoint)
+	{
+		return font->DxFromCodepoint(codepoint);
+	}
+#endif
 }
 
 void CTextBox::SetPos(float x, float y)
@@ -351,6 +414,10 @@ CRichText::CRichText(const char* achz, CFontBrx* pfont)
 	// Rich-text wrapping and trimming are destructive. Keep a writable copy so
 	// callers may safely pass string literals and other read-only text.
 	m_text = GameFontTextFromUtf8(achz);
+#if defined(CANE_SAFEHOUSE)
+	MatchStickGlyphsToWords(m_text);
+	ReplaceButtonWords(m_text);
+#endif
 	m_achz = m_text.data();
 	m_pfontBase = pfont;
 	m_pfontCur = pfont;
@@ -706,7 +773,7 @@ float CRichText::Dx()
 		if (ch == '\0')
 			break;
 
-		dx += m_pfontCur->DxFromCodepoint(ch);
+		dx += DxGlyph(m_pfontCur, ch);
 	}
 
 	return dx;
@@ -750,7 +817,7 @@ void CRichText::Draw(CTextBox* ptbx, CTextBox* ptbxClip,
 		}
 
 		if (m_pfontCur != nullptr)
-			lineWidths[lineCount] += m_pfontCur->DxFromCodepoint(ch) * outputScaleX;
+			lineWidths[lineCount] += DxGlyph(m_pfontCur, ch) * outputScaleX;
 	}
 
 	const float lineHeight = static_cast<float>(m_pfontBase->m_dyUnscaled) *
@@ -877,8 +944,9 @@ void CRichText::Draw(CTextBox* ptbx, CTextBox* ptbxClip,
 		const float ryScale = currentFont->m_ryScale;
 		currentFont->m_rxScale *= outputScaleX;
 		currentFont->m_ryScale *= outputScaleY;
-		AppendGlyph(glyphs, currentFont, ch, xCursor, yCursor, m_rgbaCur);
-		xCursor += currentFont->DxFromCodepoint(ch);
+		if (const uint32_t chDraw = ChJoyGlyph(glyphs, batchTexture, batchNearest, currentFont, ch, xCursor, yCursor, m_rgbaCur))
+			AppendGlyph(glyphs, currentFont, chDraw, xCursor, yCursor, m_rgbaCur);
+		xCursor += DxGlyph(currentFont, ch);
 		currentFont->m_rxScale = rxScale;
 		currentFont->m_ryScale = ryScale;
 	}
@@ -977,6 +1045,18 @@ float CFontBrx::DxFromPchz(char* pchz)
 
 float CFontBrx::DxFromCh(char ch)
 {
+#if defined(CANE_SAFEHOUSE)
+	// Controller glyphs measure as the glyph of the button actually bound,
+	// whatever the device, so a device switch never relayouts the text.
+	if ((m_grffont & kgrffontJoy) != 0)
+	{
+		const PROMPTGLYPH prompt = PromptGlyphFor(ch);
+		if (prompt.kind == PROMPTGLYPH::Icon && FWidePromptGlyph(prompt.ch))
+			return static_cast<float>(m_dyUnscaled) * m_ryScale;
+		ch = prompt.ch;
+	}
+#endif
+
 	// Get the glyph information for the character.
 	GLYFF* pGlyph = PglyffFromCh(ch);
 
@@ -1054,6 +1134,16 @@ void CFontBrx::SetupDraw()
 
 float CFontBrx::DxDrawCh(char ch, float xChar, float yChar, glm::vec4& rgba)
 {
+#if defined(CANE_SAFEHOUSE)
+	if ((m_grffont & kgrffontJoy) != 0)
+	{
+		const PROMPTGLYPH prompt = PromptGlyphFor(ch);
+		if (prompt.kind == PROMPTGLYPH::Icon)
+			return DxDrawPromptIcon(prompt, xChar, yChar, rgba);
+		ch = prompt.ch;
+	}
+#endif
+
 	GLYFF* glyph = PglyffFromCh(ch);
 
 	if (!glyph)
@@ -1079,6 +1169,41 @@ float CFontBrx::DxDrawCh(char ch, float xChar, float yChar, glm::vec4& rgba)
 
 	return glyphAdvance;
 }
+
+#if defined(CANE_SAFEHOUSE)
+float CFontBrx::DxDrawPromptIcon(const PROMPTGLYPH& prompt, float xChar, float yChar, glm::vec4& rgba)
+{
+	// The cell keeps the width DxFromCh reported; the square icon is centred
+	// in it at the font's line height. Narrow cells (the d-pad arrows) get a
+	// smaller icon that may only reach a little into the glyph spacing.
+	const float dy = static_cast<float>(m_dyUnscaled) * m_ryScale;
+	float dx = dy;
+	if (!FWidePromptGlyph(prompt.ch))
+	{
+		GLYFF* glyph = PglyffFromCh(prompt.ch);
+		dx = glyph != nullptr
+			? static_cast<float>(glyph->dx + 1) * m_rxScale
+			: static_cast<float>(m_dxSpaceUnscaled) * m_rxScale;
+	}
+	const float side = (std::min)(dy, dx * 1.2f);
+
+	// The game tints controller glyphs with GS colours, where 0x80 is full
+	// intensity (binoc.cpp passes 128/255). The icons are authored at full
+	// intensity, so undo that halving and keep the alpha.
+	const glm::vec4 tint(
+		(std::min)(1.0f, rgba.r * 2.0f),
+		(std::min)(1.0f, rgba.g * 2.0f),
+		(std::min)(1.0f, rgba.b * 2.0f),
+		rgba.a);
+
+	BindBlotTexture(prompt.texture);
+	RenderGlyphQuad(xChar + (dx - side) * 0.5f, yChar + (dy - side) * 0.5f, side, side,
+		prompt.u0, prompt.v0, prompt.u1, prompt.v1, tint);
+	BindBlotTexture(m_pbmp != nullptr ? m_pbmp->glDiffuseMap : 0);
+
+	return dx;
+}
+#endif
 
 float CFontBrx::DxDrawChRotated90(char ch, float xChar, float yChar, glm::vec4& rgba)
 {
@@ -1423,7 +1548,7 @@ void CFontBrx::DrawPchz(char* pchz, CTextBox* ptbx)
 				float lineWidth = 0.0f;
 				const char* p = pchz;
 				while (*p != '\0' && *p != '\n') {
-					lineWidth += DxFromCodepoint(DecodeUtf8(p));
+					lineWidth += DxGlyph(this, DecodeUtf8(p));
 				}
 
 				if (ptbx->m_jh == JH_Right) {
@@ -1438,8 +1563,10 @@ void CFontBrx::DrawPchz(char* pchz, CTextBox* ptbx)
 
 		const char* next = pchz;
 		const uint32_t codepoint = DecodeUtf8(next);
-		AppendGlyph(glyphs, this, codepoint, x, y, ptbx->m_rgba);
-		float charWidth = DxFromCodepoint(codepoint);
+		if (const uint32_t chDraw = ChJoyGlyph(glyphs, m_pbmp != nullptr ? m_pbmp->glDiffuseMap : 0, FGuiSpriteFont(this), this,
+				codepoint, x, y, ptbx->m_rgba))
+			AppendGlyph(glyphs, this, chDraw, x, y, ptbx->m_rgba);
+		float charWidth = DxGlyph(this, codepoint);
 		x += charWidth;
 		pchz = const_cast<char*>(next);
 	}

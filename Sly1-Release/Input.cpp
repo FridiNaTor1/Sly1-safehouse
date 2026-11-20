@@ -11,10 +11,26 @@ float g_controllerDeadzone = 0.35f;
 #endif
 #include "ui.h"
 #include "mb.h"
+#if defined(CANE_SAFEHOUSE)
+// SafeHouse: the pads through GLFW and SafeHouse's controller layer (platform/controller_family.h: every pad
+// identified by family for the button icons, Steam Input's virtual pads resolved, the bundled mapping database),
+// the motors through SDL (platform/pad_rumble.h), the mouse through mouseinput.h, the options in pcinput.h.
+#include "safehouse/mouseinput.h"
+#include "safehouse/pcinput.h"
+#include "prompt.h"
+#include "safehouse/prompt_glyphs.h"
+#include <safehouse/controller_family.h>
+#include <safehouse/gamepad_mappings.h>
+#include <safehouse/pad_rumble.h>
+#include <safehouse/system_settings.h>
+#else
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+#endif
 #include <cstdio>
+#include <cstdlib>
 #include <iterator>
+#include <string>
 #include <vector>
 
 namespace
@@ -42,13 +58,12 @@ constexpr float GAMEPAD_ACTIVITY_TIE_EPSILON = 0.05f;
 CODE* s_pcode = nullptr;
 float s_tCodeCheck = 0.0f;
 
-uint16_t GrfbtnFromState(const std::unordered_map<JOY_BUTTON, bool>& state)
+uint16_t GrfbtnFromState(const JOY::BUTTONS& state)
 {
     uint16_t grfbtn = 0;
     const auto held = [&state](JOY_BUTTON button)
     {
-        const auto it = state.find(button);
-        return it != state.end() && it->second;
+        return state[button];
     };
 
     if (held(BTN_SELECT))   grfbtn |= JBC_SELECT;
@@ -174,6 +189,19 @@ CODE s_codes[] =
     { s_codePassword,    static_cast<int>(std::size(s_codePassword)),    CodeShowPassword,       0 }
 };
 
+#if defined(CANE_SAFEHOUSE)
+// The keyboard and mouse layout of SafeHouse's Sly 2 (platform/system_settings.h kSly2DefaultKeyboardBindings, by
+// PS2 button): Square = left mouse, Circle = E, Cross = Space, Triangle = Q, L1 / L2 / R2 = 1 / 2 / 3, R1 = Left
+// Shift, L3 = Tab, R3 = right mouse, Start = Enter (Escape is always a second Start), Select = Backspace.
+constexpr std::array<int, BTN_MAX> kDefaultKeyboardBindings = []
+{
+    std::array<int, BTN_MAX> keys{};
+    for (int i = 0; i < BTN_MAX; ++i)
+        keys[i] = cane::settings::kSly2DefaultKeyboardBindings[i];
+    return keys;
+}();
+static_assert(BTN_MAX == cane::settings::kBindingCount);
+#else
 constexpr std::array<int, BTN_MAX> kDefaultKeyboardBindings =
 {
     GLFW_KEY_W, GLFW_KEY_S, GLFW_KEY_A, GLFW_KEY_D,
@@ -182,6 +210,7 @@ constexpr std::array<int, BTN_MAX> kDefaultKeyboardBindings =
     GLFW_KEY_Q, GLFW_KEY_E, GLFW_KEY_Z, GLFW_KEY_C,
     GLFW_KEY_UNKNOWN, GLFW_KEY_UNKNOWN
 };
+#endif
 
 constexpr std::array<int, BTN_MAX> kDefaultGamepadBindings =
 {
@@ -195,6 +224,7 @@ constexpr std::array<int, BTN_MAX> kDefaultGamepadBindings =
     GLFW_GAMEPAD_BUTTON_LEFT_THUMB, GLFW_GAMEPAD_BUTTON_RIGHT_THUMB
 };
 
+#if !defined(CANE_SAFEHOUSE)
 float GamepadActivity(const GLFWgamepadstate& state)
 {
     float activity = 0.0f;
@@ -219,6 +249,7 @@ float GamepadActivity(const GLFWgamepadstate& state)
 
     return activity;
 }
+#endif
 
 void InitializeGamepadState(GLFWgamepadstate* state)
 {
@@ -229,6 +260,7 @@ void InitializeGamepadState(GLFWgamepadstate* state)
     state->axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER] = -1.0f;
 }
 
+#if !defined(CANE_SAFEHOUSE)
 struct SdlControllerDevice
 {
     SDL_GameController* controller = nullptr;
@@ -237,6 +269,7 @@ struct SdlControllerDevice
 
 std::vector<SdlControllerDevice> s_sdlControllers;
 double s_nextControllerScan = 0.0;
+#endif
 
 // The PS2 used a binary high-speed motor and an 8-bit low-speed motor. These
 // patterns retain that representation so the retail rumble scheduler can be
@@ -298,6 +331,51 @@ constexpr RUMPAT s_arumpat[RUMK_Max] =
     { s_ruminsBomb,        static_cast<int>(std::size(s_ruminsBomb)) }
 };
 
+#if defined(CANE_SAFEHOUSE)
+#ifdef CANE_SDL_RUMBLE
+cane::rumble::SdlRumble s_sdlRumble;
+#endif
+
+// A newly pressed key counts as keyboard use for the button icons: every bound key, the camera keys and Escape.
+bool FKeyHeld(GLFWwindow* window, int key)
+{
+    return key >= GLFW_KEY_SPACE && key <= GLFW_KEY_LAST && glfwGetKey(window, key) == GLFW_PRESS;
+}
+
+uint32_t GrfKeyboardHeld(GLFWwindow* window)
+{
+    uint32_t grf = 0;
+    for (int button = 0; button < BTN_MAX; ++button)
+        if (FKeyHeld(window, g_keyboardBindings[button]))
+            grf |= 1U << button;
+    for (int i = 0; i < static_cast<int>(g_cameraKeyBindings.size()); ++i)
+        if (FKeyHeld(window, g_cameraKeyBindings[i]))
+            grf |= 1U << (BTN_MAX + i);
+    if (FKeyHeld(window, GLFW_KEY_ESCAPE))
+        grf |= 1U << (BTN_MAX + 4);
+    return grf;
+}
+
+uint32_t s_grfKeyboardHeldPrev = 0;
+
+// The retail actuator bytes to the pad in use (platform/pad_rumble.h: the shared mapping and SDL device matching).
+void SetSdlRumble(const JOY* pjoy, uint8_t highSpeedMotor, uint8_t lowSpeedMotor)
+{
+#ifdef CANE_SDL_RUMBLE
+    if (pjoy == nullptr || pjoy->joystickId < 0)
+        return;
+    const char* guid = glfwGetJoystickGUID(pjoy->joystickId);
+    if (guid == nullptr)
+        return;
+    // (the launcher's Controller vibration off: the motors stay still)
+    if (!g_fControllerVibration)
+        highSpeedMotor = lowSpeedMotor = 0;
+    s_sdlRumble.set(guid, cane::rumble::MotorsFromDualShock(highSpeedMotor, lowSpeedMotor), glfwGetTime());
+#else
+    (void)pjoy; (void)highSpeedMotor; (void)lowSpeedMotor;
+#endif
+}
+#else
 float NormalizeSdlAxis(Sint16 value)
 {
     return value < 0
@@ -436,6 +514,7 @@ bool GetSdlControllerState(SDL_GameController* controller, GLFWgamepadstate* sta
         NormalizeSdlTrigger(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT));
     return true;
 }
+#endif
 
 const char* PchzKeyboardKeyNameInternal(int key)
 {
@@ -464,6 +543,55 @@ const char* PchzKeyboardKeyNameInternal(int key)
 }
 }
 
+#if defined(CANE_SAFEHOUSE)
+bool StartupControllerInput()
+{
+    // (after InitGL: GLFW and the GL context exist) joystick identification, the bundled mappings, the icon atlases,
+    // the test switches
+    cane::input::installJoystickCallback();
+    if (!cane::input::applyBundledMappings())
+        std::fprintf(stderr, "[Input] the bundled controller mappings were rejected; using GLFW's own\n");
+    cane::input::tracker().forceFromEnv();
+    StartupPromptAtlas();
+    ApplyPcInputEnv();
+    if (const char* selftest = std::getenv("SLY1_SELFTEST"); selftest != nullptr && std::string(selftest) == "prompts")
+    {
+        try
+        {
+            TestPromptGlyphs();
+            std::printf("Prompt glyph checks passed\n");
+            std::exit(0);
+        }
+        catch (const std::exception& e)
+        {
+            std::printf("%s\n", e.what());
+            std::exit(1);
+        }
+    }
+#ifdef CANE_SDL_RUMBLE
+    return s_sdlRumble.startup();
+#else
+    return true;
+#endif
+}
+
+void ShutdownControllerInput()
+{
+    StopJoyRumble(&g_joy);
+#ifdef CANE_SDL_RUMBLE
+    s_sdlRumble.shutdown();
+#endif
+    ShutdownPromptAtlas();
+}
+
+bool FControllerInputAvailable()
+{
+    for (int jid = GLFW_JOYSTICK_1; jid <= GLFW_JOYSTICK_LAST; ++jid)
+        if (glfwJoystickPresent(jid) && glfwJoystickIsGamepad(jid) && !cane::input::ignoredSteamDuplicate(jid))
+            return true;
+    return false;
+}
+#else
 bool StartupControllerInput()
 {
     SDL_SetMainReady();
@@ -496,9 +624,14 @@ bool FControllerInputAvailable()
     RefreshSdlControllers(false);
     return !s_sdlControllers.empty();
 }
+#endif
 
 const char* PchzKeyboardKeyName(int key)
 {
+#if defined(CANE_SAFEHOUSE)
+    if (FMouseBinding(key))
+        return PchzMouseBindingName(key);
+#endif
     if (FMouseBinding(key))
     {
         switch (MouseButtonFromBinding(key))
@@ -542,13 +675,188 @@ const char* PchzGamepadBindingName(int binding)
     }
 }
 
+#if defined(CANE_SAFEHOUSE)
+const char* PchzGamepadBindingName(int binding, cane::input::Family family)
+{
+    if (cane::input::fromGlfwBinding(binding) == cane::input::Button::Count)
+        return ContentUiText("Unbound", "Non assigné", "Nicht belegt", "Sin asignar", "Non assegnato");
+    return cane::input::buttonLabel(cane::input::fromGlfwBinding(binding), family);
+}
+
 void JOY::Update(GLFWwindow* window)
 {
     const int previousJoystickId = joystickId;
     const uint16_t grfbtnPrev = GrfbtnFromState(current);
     previous = current;
-    handled.clear();
-    forcedHeld.clear();
+    handled.fill(false);
+    forcedHeld.fill(false);
+    current.fill(false);
+
+    // The mouse's motion, buttons and cursor capture for this update.
+    UpdateMouseInput(window);
+    const bool fMenu = g_prompt.fActive && g_prompt.blots != BLOTS_Hidden;
+    const bool fFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE;
+    for (int button = 0; button < BTN_MAX; ++button)
+    {
+        const int key = g_keyboardBindings[button];
+        // In a menu with the mouse in menus on, the left / right buttons only choose / go back there: an action
+        // bound to them is not sent.
+        if (fMenu && g_mouseopt.fMenus &&
+            (key == MouseBindingFromButton(GLFW_MOUSE_BUTTON_LEFT) || key == MouseBindingFromButton(GLFW_MOUSE_BUTTON_RIGHT)))
+            continue;
+        current[button] = FMouseBinding(key) ? FMouseBindingHeld(key) : FKeyHeld(window, key);
+    }
+    // Escape is a fixed second Start: it pauses, and backs out of the menus.
+    if (fFocused && FKeyHeld(window, GLFW_KEY_ESCAPE))
+        current[BTN_START] = true;
+
+    // A newly pressed key makes the keyboard the device the button icons are drawn for.
+    const uint32_t grfKeyboardHeld = GrfKeyboardHeld(window);
+    if ((grfKeyboardHeld & ~s_grfKeyboardHeldPrev) != 0)
+        cane::input::tracker().noteKeyboard();
+    s_grfKeyboardHeldPrev = grfKeyboardHeld;
+
+    float xRaw = 0.0f;
+    float yRaw = 0.0f;
+    float x2Raw = 0.0f;
+    float y2Raw = 0.0f;
+
+    GLFWgamepadstate state{};
+    InitializeGamepadState(&state);
+    bool haveGamepadState = false;
+    int activeJoystickId = JOYID_Nil;
+    const bool allowControllerInput = !g_fDisableControllerInputWhenUnfocused || fFocused;
+
+    // Every mapped pad is polled and the one receiving input is used (Steam can leave an idle virtual pad in a
+    // lower slot than the physical one); a pressed button or a deflected stick makes that pad's family the one
+    // the button icons are drawn for.
+    if (allowControllerInput)
+    {
+        const int jid = cane::input::selectActivePad(joystickId, &state);
+        if (jid >= 0)
+        {
+            activeJoystickId = jid;
+            haveGamepadState = true;
+        }
+        cane::input::tracker().pollGamepads();
+    }
+
+    if (haveGamepadState)
+    {
+        if (!gamepadConnected || activeJoystickId != joystickId)
+        {
+            calibration = StickCalibration{};
+            calibration2 = StickCalibration{};
+#ifdef CANE_SDL_RUMBLE
+            // (the pad that came into use is opened for its motors now, not at its first vibration)
+            s_sdlRumble.prepare(glfwGetJoystickGUID(activeJoystickId), glfwGetTime());
+#endif
+        }
+
+        joystickId = activeJoystickId;
+        gamepadConnected = true;
+        gamepadState = state;
+        hasGamepadState = true;
+        for (int button = 0; button < BTN_MAX; ++button)
+        {
+            const int binding = g_gamepadBindings[button];
+            bool held = false;
+            if (binding >= 0 && binding <= GLFW_GAMEPAD_BUTTON_LAST)
+                held = state.buttons[binding] == GLFW_PRESS;
+            else if (binding == GAMEPAD_BINDING_LEFT_TRIGGER)
+                held = state.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER] > 0.25f;
+            else if (binding == GAMEPAD_BINDING_RIGHT_TRIGGER)
+                held = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER] > 0.25f;
+            current[button] = current[button] || held;
+        }
+
+        xRaw = state.axes[GLFW_GAMEPAD_AXIS_LEFT_X];
+        // STEP/JT expects the original PlayStation convention: forward is
+        // positive Y. GLFW reports stick-up as -1, so invert it here.
+        yRaw = -state.axes[GLFW_GAMEPAD_AXIS_LEFT_Y];
+        x2Raw = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_X];
+        y2Raw = -state.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y];
+    }
+    else
+    {
+        joystickId = JOYID_Nil;
+        gamepadConnected = false;
+        hasGamepadState = false;
+        InitializeGamepadState(&gamepadState);
+    }
+
+    // Switching pads stops the old one's motors.
+    if (previousJoystickId != JOYID_Nil && previousJoystickId != joystickId && rumble.rums == RUMS_Rumble)
+    {
+        JOY previousJoy;
+        previousJoy.joystickId = previousJoystickId;
+        previousJoy.gamepadConnected = true;
+        SetSdlRumble(&previousJoy, 0, 0);
+    }
+
+    // Keyboard movement emulates the left analog stick.  The base CPMAN
+    // policy is normally active during gameplay, so it must not suppress
+    // these values or the player receives a permanently centered stick.
+    if (current[BTN_LEFT] && !current[BTN_RIGHT]) xRaw = -1.0f;
+    if (current[BTN_RIGHT] && !current[BTN_LEFT]) xRaw = 1.0f;
+    if (current[BTN_UP] && !current[BTN_DOWN]) yRaw = 1.0f;
+    if (current[BTN_DOWN] && !current[BTN_UP]) yRaw = -1.0f;
+
+    // Keyboard camera input emulates the right analog stick (the arrows by default, rebindable).
+    bool cameraLeft = FKeyHeld(window, g_cameraKeyBindings[0]);
+    bool cameraRight = FKeyHeld(window, g_cameraKeyBindings[1]);
+    bool cameraUp = FKeyHeld(window, g_cameraKeyBindings[2]);
+    bool cameraDown = FKeyHeld(window, g_cameraKeyBindings[3]);
+
+    // In a menu the camera keys move the highlight like the d-pad and Enter confirms like Cross, as PC menus do.
+    // An Enter still held from opening the menu (Enter is Start by default) waits for its release, so it never
+    // confirms the first row; an Enter that confirmed stays a confirm until released, so closing a menu with it
+    // does not open the pause menu again.
+    static bool s_fEnterLatched = false, s_fEnterConfirms = false;
+    const bool fEnter = FKeyHeld(window, GLFW_KEY_ENTER) || FKeyHeld(window, GLFW_KEY_KP_ENTER);
+    if (!fEnter)
+        s_fEnterLatched = s_fEnterConfirms = false;
+    else if (fMenu && !s_fEnterLatched)
+        s_fEnterConfirms = true;
+    else if (!fMenu && !s_fEnterConfirms)
+        s_fEnterLatched = true;
+    if (s_fEnterConfirms)
+    {
+        current[BTN_CROSS] = current[BTN_CROSS] || fMenu;
+        if (g_keyboardBindings[BTN_START] == GLFW_KEY_ENTER || g_keyboardBindings[BTN_START] == GLFW_KEY_KP_ENTER)
+            current[BTN_START] = fFocused && FKeyHeld(window, GLFW_KEY_ESCAPE);
+    }
+    if (fMenu)
+    {
+        current[BTN_LEFT] = current[BTN_LEFT] || cameraLeft;
+        current[BTN_RIGHT] = current[BTN_RIGHT] || cameraRight;
+        current[BTN_UP] = current[BTN_UP] || cameraUp;
+        current[BTN_DOWN] = current[BTN_DOWN] || cameraDown;
+        cameraLeft = cameraRight = cameraUp = cameraDown = false;
+    }
+
+    if (cameraLeft && !cameraRight) x2Raw = -1.0f;
+    if (cameraRight && !cameraLeft) x2Raw = 1.0f;
+    if (cameraUp && !cameraDown) y2Raw = 1.0f;
+    if (cameraDown && !cameraUp) y2Raw = -1.0f;
+
+    ApplyStickDeadZone(xRaw, yRaw, &calibration, &x, &y, &uDeflect);
+    ApplyStickDeadZone(x2Raw, y2Raw, &calibration2, &x2, &y2, &uDeflect2);
+
+    _MatchCodes(this, grfbtnPrev);
+
+    UpdateRumble(&rumble, this);
+
+    joys = JOYS_Ready;
+}
+#else
+void JOY::Update(GLFWwindow* window)
+{
+    const int previousJoystickId = joystickId;
+    const uint16_t grfbtnPrev = GrfbtnFromState(current);
+    previous = current;
+    handled.fill(false);
+    forcedHeld.fill(false);
 
     for (int button = 0; button < BTN_MAX; ++button)
         current[static_cast<JOY_BUTTON>(button)] = false;
@@ -675,6 +983,7 @@ void JOY::Update(GLFWwindow* window)
 
     joys = JOYS_Ready;
 }
+#endif
 
 void AddCode(CODE* pcode)
 {
@@ -1048,6 +1357,7 @@ GRFUSR g_grfusr;
 int vibrationSetting = 1;
 std::array<int, BTN_MAX> g_keyboardBindings = kDefaultKeyboardBindings;
 std::array<int, BTN_MAX> g_gamepadBindings = kDefaultGamepadBindings;
+std::array<int, 4> g_cameraKeyBindings = { GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_UP, GLFW_KEY_DOWN };
 
 void ResetKeyboardMouseBindings()
 {
@@ -1059,5 +1369,10 @@ void ResetControllerBindings()
     g_gamepadBindings = kDefaultGamepadBindings;
 }
 bool g_fDisableControllerInputWhenUnfocused = false;
+#if defined(CANE_SAFEHOUSE)
+bool g_fMouseCamera = true;   // (as Sly 2: the mouse turns the camera by default)
+bool g_fControllerVibration = true;
+#else
 bool g_fMouseCamera = false;
+#endif
 float g_mouseCameraSensitivity = 1.0f;

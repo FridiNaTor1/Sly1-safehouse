@@ -15,6 +15,9 @@
 #include "blip.h"
 #include "content.h"
 #include "safehouse/mods.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/prompt_glyphs.h"
+#endif
 #include "../platform/platform.h"
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/frame.h"
@@ -282,6 +285,9 @@ void RunGameFrame()
         ShDrawSkipCut();
 #endif
     }
+#if defined(CANE_SAFEHOUSE)
+    DrawPcInputOverlays();   // (prompt_glyphs.h: the icon test strip)
+#endif
 
     if (g_fMsaa)
     {

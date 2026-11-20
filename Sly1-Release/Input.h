@@ -117,10 +117,12 @@ struct JOY
         uint8_t previousY = 128;
     };
 
-    std::unordered_map<JOY_BUTTON, bool> current;
-    std::unordered_map<JOY_BUTTON, bool> previous;
-    std::unordered_map<JOY_BUTTON, bool> handled;
-    std::unordered_map<JOY_BUTTON, bool> forcedHeld;
+    using BUTTONS = std::array<bool, BTN_MAX>;
+
+    BUTTONS current{};
+    BUTTONS previous{};
+    BUTTONS handled{};
+    BUTTONS forcedHeld{};
 
     float stick = 0.0f;
     float stickLatch = 0.0f;
@@ -280,6 +282,8 @@ extern GRFUSR g_grfusr;
 extern int vibrationSetting;
 extern std::array<int, BTN_MAX> g_keyboardBindings;
 extern std::array<int, BTN_MAX> g_gamepadBindings;
+// Keyboard camera (right stick) keys: Left, Right, Up, Down.
+extern std::array<int, 4> g_cameraKeyBindings;
 void ResetKeyboardMouseBindings();
 void ResetControllerBindings();
 extern bool g_fDisableControllerInputWhenUnfocused;
@@ -288,6 +292,28 @@ extern float g_mouseCameraSensitivity;
 
 inline constexpr int GAMEPAD_BINDING_LEFT_TRIGGER = 1000;
 inline constexpr int GAMEPAD_BINDING_RIGHT_TRIGGER = 1001;
+#if defined(CANE_SAFEHOUSE)
+// SafeHouse's binding codes (platform/system_settings.h, shared with Sly 2 / Sly 3 and the launcher's settings):
+// mouse button N is 2000 + N, then the wheel (2008 up, 2009 down).
+inline constexpr int MOUSE_BINDING_BASE = 2000;
+inline constexpr int MOUSE_BINDING_WHEEL_UP = MOUSE_BINDING_BASE + 8;
+inline constexpr int MOUSE_BINDING_WHEEL_DOWN = MOUSE_BINDING_BASE + 9;
+
+inline constexpr int MouseBindingFromButton(int button)
+{
+    return MOUSE_BINDING_BASE + button;
+}
+
+inline constexpr bool FMouseBinding(int binding)
+{
+    return binding >= MOUSE_BINDING_BASE && binding <= MOUSE_BINDING_WHEEL_DOWN;
+}
+
+inline constexpr int MouseButtonFromBinding(int binding)
+{
+    return binding - MOUSE_BINDING_BASE;
+}
+#else
 // Mouse buttons share the keyboard binding table so each gameplay action still
 // has one PC-side binding. Values are kept outside GLFW's key range and away
 // from GLFW_KEY_UNKNOWN (-1).
@@ -308,6 +334,13 @@ inline constexpr int MouseButtonFromBinding(int binding)
 {
     return MOUSE_BINDING_BASE - binding;
 }
+#endif
+
+namespace cane::input { enum class Family : uint8_t; }
 
 const char* PchzKeyboardKeyName(int key);
 const char* PchzGamepadBindingName(int binding);
+#if defined(CANE_SAFEHOUSE)
+// A gamepad binding's name for a controller family ("A", "Cross", "ZR"; platform/controller_family.h).
+const char* PchzGamepadBindingName(int binding, cane::input::Family family);
+#endif

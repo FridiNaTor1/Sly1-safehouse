@@ -1,4 +1,7 @@
 #include "cplook.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/mouseinput.h"
+#endif
 #include "jt.h"
 #include "cm.h"
 #include "binoc.h"
@@ -153,6 +156,11 @@ void UpdateCplook(CPLOOK* pcplook, CPDEFI* pcpdefi, JOY* pjoy, float dt)
 			const float zoomRate = (s_clqUZoomToRsvu.g0 + pcplook->uZoom * (s_clqUZoomToRsvu.g1 + pcplook->uZoom * s_clqUZoomToRsvu.g2)) * pjoy->y2 * std::abs(pjoy->y2);
 			pcplook->svuZoom = zoomRate;
 			pcplook->uZoom = glm::clamp(pcplook->uZoom + zoomRate * dt, 0.0f, 1.0f);
+#if defined(CANE_SAFEHOUSE)
+			// The mouse wheel zooms (when no action is bound to it).
+			if (FMouseCameraJoy(pjoy))
+				pcplook->uZoom = glm::clamp(pcplook->uZoom + MouseWheelZoom() * 0.08f, 0.0f, 1.0f);
+#endif
 			break;
 		}
 
@@ -388,7 +396,8 @@ void UpdateCplook(CPLOOK* pcplook, CPDEFI* pcpdefi, JOY* pjoy, float dt)
 	{
 		float inputPan = GLimitAbs(pjoy->x + pjoy->x2, 1.0f);
 		float inputTilt = GLimitAbs(pjoy->y, 1.0f);
-		if (g_pjt != nullptr && PpoCur() == g_pjt && g_pjt->jtbs != JTBS_Peek_Peek)
+		const bool fInputGated = g_pjt != nullptr && PpoCur() == g_pjt && g_pjt->jtbs != JTBS_Peek_Peek;
+		if (fInputGated)
 		{
 			inputPan = 0.0f;
 			inputTilt = 0.0f;
@@ -450,6 +459,23 @@ void UpdateCplook(CPLOOK* pcplook, CPDEFI* pcpdefi, JOY* pjoy, float dt)
 			pcplook->radPan  = RadNormalize(pcplook->radPan + pcplook->swPan * dt);
 			pcplook->radTilt = glm::clamp(pcplook->radTilt + pcplook->swTilt * dt, -1.0f, 1.0f);
 		}
+
+#if defined(CANE_SAFEHOUSE)
+		// The mouse aims straight onto the angles (no acceleration), slower while zoomed in: mouse right looks
+		// right, mouse up looks up.
+		if (!fInputGated && FMouseCameraJoy(pjoy))
+		{
+			float dxMouse = 0.0f, dyMouse = 0.0f;
+			MouseAimDelta(&dxMouse, &dyMouse);
+			if (dxMouse != 0.0f || dyMouse != 0.0f)
+			{
+				const float zoomScale = pcplook->lmFOV.gMax > 0.0001f
+					? glm::clamp(pcm->radFOV / pcplook->lmFOV.gMax, 0.05f, 1.0f) : 1.0f;
+				pcplook->radPan = RadNormalize(pcplook->radPan - dxMouse * zoomScale);
+				pcplook->radTilt = glm::clamp(pcplook->radTilt + dyMouse * zoomScale, -1.0f, 1.0f);
+			}
+		}
+#endif
 
 		PosCplookEye(pcplook, &posEye);
 

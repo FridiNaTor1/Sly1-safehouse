@@ -112,6 +112,8 @@ struct CFont
     float m_ryScale = 1.0f;
 };
 
+struct PROMPTGLYPH;
+
 class CFontBrx : public CFont
 {
     public:
@@ -137,6 +139,10 @@ class CFontBrx : public CFont
     void SetupDraw();
     float DxDrawCh(char ch, float xChar, float yChar, glm::vec4& rgba);
     float DxDrawChRotated90(char ch, float xChar, float yChar, glm::vec4& rgba);
+#if defined(CANE_SAFEHOUSE)
+    // Draws a controller prompt icon in place of a font-1 glyph (prompt_glyphs.h).
+    float DxDrawPromptIcon(const PROMPTGLYPH& prompt, float xChar, float yChar, glm::vec4& rgba);
+#endif
     void EdgeRect(CTextEdge* pte, CTextBox* ptbx);
     void PushScaling(float rx, float ry);
     void CopyTo(CFontBrx* pfontDst);
