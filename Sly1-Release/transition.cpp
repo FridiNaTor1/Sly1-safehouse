@@ -7,6 +7,7 @@
 #include "spu_reverb_xapo.h"
 #include "runtime_error.h"
 #include "content.h"
+#include "safehouse/mods.h"
 #include "../platform/platform.h"
 
 #include <algorithm>
@@ -272,7 +273,9 @@ void CTransition::Execute(std::string& file)
 
         try
         {
-			bis.OpenFile(fileNew);
+			// (a level in the Mods folder, mods.h, is read in place of the installed one; fileNew stays the installed
+			// path, beside which the dialog, music and cutscene files are looked for)
+			bis.OpenFile(cane::Utf8(ModPath(cane::PathFromUtf8(fileNew))));
         }
         catch (const std::exception& exception)
         {

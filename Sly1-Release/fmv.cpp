@@ -1,5 +1,6 @@
 #include "fmv.h"
 #include "content.h"
+#include "safehouse/mods.h"
 #include "gui_layout.h"
 #include "game.h"
 #include "screen.h"
@@ -426,7 +427,8 @@ namespace
         const bool isStartupSplash = info.identityId == STARTUP_SPLASH_QUEUE_ID;
         const CutscenePaths paths =
             FindCutscenePaths(info.videoFileName, info.audioFileName, isStartupSplash);
-        const std::filesystem::path& videoPath = paths.video;
+        // (a video in the Mods folder replaces the installed one, mods.h)
+        const std::filesystem::path videoPath = ModPath(paths.video);
         const std::filesystem::path& audioPath = paths.audio;
 
         AVFormatContext* format = nullptr;

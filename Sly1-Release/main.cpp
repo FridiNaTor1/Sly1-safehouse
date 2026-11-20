@@ -14,6 +14,7 @@
 #include "emitter.h"
 #include "blip.h"
 #include "content.h"
+#include "safehouse/mods.h"
 #include "../platform/platform.h"
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/frame.h"
@@ -602,8 +603,18 @@ int RunApplication(const std::vector<std::string>& arguments)
     InstallRuntimeErrorHandlers();
     try
     {
+#if defined(CANE_SAFEHOUSE)
+		// (SafeHouse: the mods' options, mods.h; a tool option runs instead of the game)
+		std::vector<std::string> runtimeArguments = arguments;
+		TakeModArguments(runtimeArguments);
+		cane::ConfigureRuntime(runtimeArguments);
+        RefreshContentPackage(cane::DataDirectory());
+		if (const int toolResult = StartMods(); toolResult >= 0)
+			return toolResult;
+#else
 		cane::ConfigureRuntime(arguments);
         RefreshContentPackage(cane::DataDirectory());
+#endif
         Startup();
 		#ifdef _WIN32
 		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);

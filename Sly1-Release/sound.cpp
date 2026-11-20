@@ -3,6 +3,7 @@
 #endif
 
 #include "sound.h"
+#include "safehouse/mods.h"
 #include "alo.h"
 #include "lo.h"
 #include "po.h"
@@ -1071,7 +1072,8 @@ std::filesystem::path FindMusicBank(MUSID musid, const char* fileName)
 bool LoadPcmWave(const std::filesystem::path& path, SoundWaveFormat& format,
 	std::vector<uint8_t>& pcm)
 {
-	std::ifstream input(path, std::ios::binary);
+	// (dialog, cutscene sound, ambience, prompts, commentary: a WAV in the Mods folder replaces it, mods.h)
+	std::ifstream input(ModPath(path), std::ios::binary);
 	if (!input.is_open())
 		return false;
 	std::vector<uint8_t> file((std::istreambuf_iterator<char>(input)), {});
@@ -1681,7 +1683,7 @@ bool DecodeMusicAdpcm(const std::vector<uint8_t>& data, std::size_t begin,
 
 bool LoadMusic989Mus(const std::filesystem::path& path)
 {
-	std::ifstream input(path, std::ios::binary);
+	std::ifstream input(ModPath(path), std::ios::binary);
 	if (!input.is_open())
 		return false;
 	const std::vector<uint8_t> data((std::istreambuf_iterator<char>(input)), {});
@@ -1776,7 +1778,7 @@ void LoadMusicAdpcmLoopPoints(const std::filesystem::path& directory)
 {
 	const std::filesystem::path musPath = directory.parent_path() /
 		(directory.filename().wstring() + L".mus");
-	std::ifstream input(musPath, std::ios::binary);
+	std::ifstream input(ModPath(musPath), std::ios::binary);
 	if (!input.is_open())
 		return;
 	const std::vector<uint8_t> data((std::istreambuf_iterator<char>(input)), {});
