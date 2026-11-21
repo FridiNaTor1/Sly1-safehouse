@@ -13,11 +13,15 @@ inline GuiScale GetGuiScale(float scaleSetting)
 {
     if (g_guiStyle == GuiStyle_PS2)
     {
-        // Keep the PS2 canvas uniformly fitted when the presentation aspect
-        // changes. The retail raster applies a fixed 4:3 horizontal pixel-
-        // aspect correction to this UI; it is part of the artwork's displayed
-        // shape, not a scale derived from the host window width.
-        constexpr float kPs2HorizontalPixelAspect = 4.0f / 3.0f;
+        // Retail lays the UI out on a 640 x 492.8 canvas and the TV shows that
+        // canvas at 4:3, so one canvas unit is (4/3) / (640/492.8) = 1.0267
+        // times wider than it is tall. Keep that shape on every presentation
+        // aspect: at 4:3 this is exactly width/640 by height/492.8 (the PS2
+        // picture). (A full 4/3 factor here drew the font-2 HUD glyphs, the
+        // lives head and the counter digits, 30% too wide, so the lives and
+        // clue counters overlapped at 4:3.)
+        constexpr float kPs2HorizontalPixelAspect =
+            (4.0f / 3.0f) / (640.0f / 492.80002f);
         const float canvasScale = g_gl.uiScale * scaleSetting;
         return {
             canvasScale * kPs2HorizontalPixelAspect,
