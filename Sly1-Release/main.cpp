@@ -630,6 +630,9 @@ int RunApplication(const std::vector<std::string>& arguments)
 		while (!glfwWindowShouldClose(g_gl.window) && fQuitGame != true)
 		{
 			RunGameFrame();
+#if defined(CANE_SAFEHOUSE)
+			ShUpdateTouchContext();
+#endif
 			glfwPollEvents();
 
 		}

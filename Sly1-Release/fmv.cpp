@@ -12,6 +12,7 @@
 #include "../platform/platform.h"
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/skipcut.h"
+#include "safehouse/launcher.h"
 #endif
 
 #include <atomic>
@@ -425,6 +426,7 @@ namespace
         glDrawArrays(GL_TRIANGLES, 0, 6);
 #if defined(CANE_SAFEHOUSE)
         ShDrawMovieSkip();
+        ShUpdateTouchContext();
 #endif
         cane::gl::SwapBuffers(g_gl.window);
         return true;
