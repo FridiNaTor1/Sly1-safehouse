@@ -5,7 +5,13 @@
 #include <safehouse/frame_pacer.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
+#if defined(__SWITCH__)
+#include <safehouse/switch/runtime.h>
+#include <safehouse/switch/sly1/deko/backend.h>
+void CaneSwitchSetFrameRate(int fps);   // platform/switch/glfw_switch.cpp
+#endif
 
 namespace
 {
@@ -76,7 +82,15 @@ void UpdateSwap()
 
 	int interval = 0;
 	bool fPaces = false;
+#if defined(__SWITCH__)
+	// The Switch always swaps with VSync: the swap paces 60 FPS (the Switch 2's 120 at 120 Hz), the pacer 30.
+	CaneSwitchSetFrameRate(g_targetFrameRate);
+	interval = 1;
+	fPaces = g_targetFrameRate >= 60;
+	if (false)
+#else
 	if (g_fVsync)
+#endif
 	{
 		interval = 1;
 		// (Windows reports 59.94 Hz modes as 59: the real refresh runs more than 1 % faster than a 59 cap, it never paces)
@@ -103,6 +117,10 @@ bool ShFrameRateUncapped(int frameRate) { return frameRate >= SH_FRAMERATE_UNCAP
 
 void ShFrameEnd()
 {
+#if defined(__SWITCH__)
+	// (the render size SaltyNX's overlays report, from the next presentation)
+	CaneDeko::SetFrameResolution(static_cast<unsigned>(g_gl.renderWidth), static_cast<unsigned>(g_gl.renderHeight));
+#endif
 	UpdateSwap();
 	// (Uncapped: a 1 ms frame at least, frame.h)
 	const int frameRate = ShFrameRateUncapped(g_targetFrameRate) ? SH_FRAMERATE_UNCAPPED : (g_targetFrameRate < 30 ? 30 : g_targetFrameRate);
@@ -112,4 +130,43 @@ void ShFrameEnd()
 void ShFrameResync()
 {
 	Pacer().Resync();
+}
+
+bool ShFixedFrameRates(std::vector<int>& rates)
+{
+#if defined(__SWITCH__)
+#if defined(__SWITCH2__)
+	rates = { 30, 60, 120 };
+#else
+	rates = { 30, 60 };
+#endif
+	return true;
+#else
+	(void)rates;
+	return false;
+#endif
+}
+
+int ShSupportedFrameRate(int frameRate)
+{
+	std::vector<int> rates;
+	if (!ShFixedFrameRates(rates))
+		return frameRate;
+	int best = rates.front();
+	for (int rate : rates)
+		if (std::abs(rate - frameRate) < std::abs(best - frameRate))
+			best = rate;
+	return best;
+}
+
+void ShLevelLoad(bool fStarting)
+{
+#if defined(__SWITCH__)
+	if (fStarting)
+		CaneSwitch::BeginLoadingBoost();
+	else
+		CaneSwitch::EndLoadingBoost();
+#else
+	(void)fStarting;
+#endif
 }

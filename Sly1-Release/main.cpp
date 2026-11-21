@@ -182,8 +182,12 @@ void RunGameFrame()
     if (g_transition.m_fPending != 0)
     {
 		FlushTransitionFrame();
+#if defined(CANE_SAFEHOUSE)
+		ShLevelLoad(true);
+#endif
 		g_transition.Execute(file);
 #if defined(CANE_SAFEHOUSE)
+		ShLevelLoad(false);
 		ShNoteLevel();
 		ShFrameResync();
 		ShDebugLevelChanged();

@@ -388,9 +388,11 @@ inline RESPK s_arespkVideoMenu[] =
     RESPK_InternalResolution,
 	RESPK_ResolutionScale,
     RESPK_DrawDistance,
+#if !(defined(CANE_SAFEHOUSE) && defined(__SWITCH__))   // (the Switch: one screen, always VSync)
     RESPK_WindowMode,
 	RESPK_Monitor,
     RESPK_Vsync,
+#endif
     RESPK_AspectRatio,
 #if defined(CANE_SAFEHOUSE)
     RESPK_HudPlacement,

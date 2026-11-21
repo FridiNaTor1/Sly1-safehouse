@@ -1,6 +1,7 @@
 // See settings.h.
 #include "settings.h"
 #include "pcinput.h"
+#include "frame.h"
 #include "../save.h"
 #include "../Input.h"
 #include "../gl.h"
@@ -155,9 +156,10 @@ bool ShLoadSystemSettings(VIDEOSAVESETTINGS* settings)
 	std::printf("settings: %s (%s)\n", cane::utf8(st::sly1SettingsPath(userDir)).c_str(),
 		result == st::Sly2Load::Ok ? "read" : result == st::Sly2Load::Migrated ? "made from Saves/system_settings.dat" :
 		result == st::Sly2Load::Missing ? "new" : "unreadable: not written this run");
-#if defined(__ANDROID__) || defined(CANE_IOS)
+#if defined(__ANDROID__) || defined(CANE_IOS) || defined(__SWITCH__)
 	// (the phones and the Quest: a new profile starts from SafeHouse's defaults, as its launcher writes them, e.g. the 3D
-	// scene at 720 lines instead of a phone panel's full resolution; elsewhere the game's own defaults)
+	// scene at 720 lines instead of a phone panel's full resolution; the Switch: its Modern interface; elsewhere the
+	// game's own defaults)
 	if (result == st::Sly2Load::Missing)
 		s_model = st::sly1Defaults();
 	PcInputFromSettings(s_model.system);   // (the input options beside VIDEOSAVESETTINGS: pcinput.h)
@@ -167,6 +169,7 @@ bool ShLoadSystemSettings(VIDEOSAVESETTINGS* settings)
 		return false;
 #endif
 	*settings = ToGame(s_model);
+	settings->frameRate = ShSupportedFrameRate(settings->frameRate);   // (a PC's 144 on the Switch: frame.h)
 	s_given = *settings;
 	s_fGiven = true;
 	s_fBaselinePending = true;

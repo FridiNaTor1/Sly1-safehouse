@@ -498,7 +498,9 @@ std::vector<int> SupportedFrameRates()
     // and supplement them with the monitor's reported refresh rates.
     std::vector<int> frameRates{ 30, 60 };
 #if defined(CANE_SAFEHOUSE)
-    // (the rates of SafeHouse's other games and Uncapped: safehouse/frame.h)
+    // (a console's fixed rates; elsewhere the rates of SafeHouse's other games and Uncapped: safehouse/frame.h)
+    if (ShFixedFrameRates(frameRates))
+        return frameRates;
     frameRates.insert(frameRates.end(), { 90, 120, 144, 240, SH_FRAMERATE_UNCAPPED });
 #endif
     GLFWmonitor* monitor = ActiveMonitor();

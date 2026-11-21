@@ -11,9 +11,18 @@
 //   takes every second refresh; any other cap is held by the timer between refreshes.
 inline constexpr int SH_FRAMERATE_UNCAPPED = 1000;
 
+#include <vector>
+
 // After each glfwSwapBuffers: the swap interval when its inputs changed, then the cap's wait.
 void ShFrameEnd();
 // After a long stall (a level load): the next frame is timed from now, with no catch-up.
 void ShFrameResync();
 // The cap's frame rate in labels ("Uncapped" from SH_FRAMERATE_UNCAPPED).
 bool ShFrameRateUncapped(int frameRate);
+// Consoles whose display runs at fixed rates (the Nintendo Switch: 30 or 60 FPS; the Switch 2 also 120): the rates
+// the Frame Rate option offers there, and true (prompt.cpp offers them as they are); false elsewhere.
+bool ShFixedFrameRates(std::vector<int>& rates);
+// A frame rate from the settings file made one this display offers (the nearest fixed rate; unchanged elsewhere).
+int ShSupportedFrameRate(int frameRate);
+// Around a level load (main.cpp: the transition): the Switch's CPU boost while it runs.
+void ShLevelLoad(bool fStarting);
