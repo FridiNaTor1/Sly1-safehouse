@@ -4,6 +4,7 @@
 #include "totals.h"
 #include "mb.h"
 #include "gl.h"
+#include "safehouse/hudbox.h"
 
 void InitBlot(BLOT* pblot, BLOTK blotk)
 {
@@ -324,8 +325,9 @@ void RepositionBlot(BLOT* pblot)
     BLOTI* const placement = pblot->pbloti;
     BLOTI* bloti = placement;
 
-    float left = 0.0f;
-    float right = g_gl.width;
+    // (the HUD Placement box: the whole picture without SafeHouse, safehouse/hudbox.h)
+    float left = HudLeft();
+    float right = HudRight();
     float bottom = 0.0f;
     float top = g_gl.height;
 

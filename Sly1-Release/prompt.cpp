@@ -20,6 +20,7 @@
 #include "safehouse/frame.h"
 #include "safehouse/launcher.h"
 #endif
+#include "safehouse/hudbox.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -59,6 +60,7 @@ const char* PcText(const char* english, const char* french, const char* german,
 			{"Controller Deadzone", "コントローラーのデッドゾーン"},
 			{"System Default", "システム既定"}, {"Audio Output", "オーディオ出力"},
 			{"Fit to Screen", "画面に合わせる"}, {"Aspect Ratio", "アスペクト比"},
+			{"HUD Placement", "HUDの位置"}, {"Match Screen", "画面に合わせる"},
 			{"GUI Scale", "GUIサイズ"}, {"GUI Style", "GUIスタイル"}, {"Modern", "モダン"},
 			{"Disable Controller When Unfocused", "非アクティブ時にコントローラーを無効化"},
 			{"Mouse Camera", "マウスカメラ"}, {"Mouse Sensitivity", "マウス感度"},
@@ -106,6 +108,7 @@ const char* PcText(const char* english, const char* french, const char* german,
 			{"Controller Deadzone", "컨트롤러 데드존"},
 			{"System Default", "시스템 기본값"}, {"Audio Output", "오디오 출력"},
 			{"Fit to Screen", "화면에 맞춤"}, {"Aspect Ratio", "화면 비율"},
+			{"HUD Placement", "HUD 위치"}, {"Match Screen", "화면에 맞춤"},
 			{"GUI Scale", "GUI 크기"}, {"GUI Style", "GUI 스타일"}, {"Modern", "모던"},
 			{"Disable Controller When Unfocused", "비활성화 시 컨트롤러 끄기"},
 			{"Mouse Camera", "마우스 카메라"}, {"Mouse Sensitivity", "마우스 감도"},
@@ -1022,6 +1025,15 @@ void SetPromptPrk(PROMPT* pprompt)
     else if (g_gl.aspectMode == PS2_16_9)
         aspectRatioName = "16:9 (PS2)";
     std::snprintf(g_achzRespk35, sizeof(g_achzRespk35), "%s: %s", PcText("Aspect Ratio", "Format d'image", "Seitenverhältnis", "Relación de aspecto", "Proporzioni"), aspectRatioName);
+#if defined(CANE_SAFEHOUSE)
+	{
+		const char* const hudPlacementNames[] = { "4:3", "16:9", "16:10",
+			PcText("Match Screen", "Selon l'écran", "Wie Bildschirm", "Igual que la pantalla", "Come lo schermo") };
+		std::snprintf(g_achzRespk84, sizeof(g_achzRespk84), "%s: %s",
+			PcText("HUD Placement", "Position du HUD", "HUD-Position", "Posición del HUD", "Posizione HUD"),
+			hudPlacementNames[(std::clamp)(ShHudPlacement(), 0, SH_HUDPLACEMENT_Max - 1)]);
+	}
+#endif
     std::snprintf(g_achzRespk40, sizeof(g_achzRespk40), "%s: %d%%", PcText("GUI Scale", "Échelle de l'interface", "UI-Skalierung", "Escala de interfaz", "Scala interfaccia"),
         static_cast<int>(std::lround(g_guiScale * 100.0f)));
     std::snprintf(g_achzRespk60, sizeof(g_achzRespk60), "%s: %s", PcText("GUI Style", "Style d'interface", "UI-Stil", "Estilo de interfaz", "Stile interfaccia"),
@@ -1518,6 +1530,9 @@ void ExecutePrompt(PROMPT* pprompt, int direction)
 			ApplyMonitorSettings(0);
 			ApplyWindowModeSettings(WindowMode_Windowed);
 			ApplyAspectRatioSettings(FitToScreen);
+#if defined(CANE_SAFEHOUSE)
+			ShSetHudPlacement(SH_HUDPLACEMENT_4_3);
+#endif
 			ApplyMsaaSettings();
 			cane::gl::SwapInterval(1);
 			glGlobShader.Use();
@@ -1571,6 +1586,14 @@ void ExecutePrompt(PROMPT* pprompt, int direction)
             SaveSystemSettings();
             rebuildPromptKeepingSelection();
             return;
+
+#if defined(CANE_SAFEHOUSE)
+            case RESPK_HudPlacement:
+            ShSetHudPlacement((ShHudPlacement() + (direction < 0 ? -1 : 1) + SH_HUDPLACEMENT_Max) % SH_HUDPLACEMENT_Max);
+            SaveSystemSettings();
+            rebuildPromptKeepingSelection();
+            return;
+#endif
 
             case RESPK_Fog:
             g_fogType = g_fogType == 1 ? 2 : 1;

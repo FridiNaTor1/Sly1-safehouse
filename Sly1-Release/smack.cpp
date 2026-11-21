@@ -1,5 +1,6 @@
 #include "smack.h"
 #include "gui_layout.h"
+#include "safehouse/hudbox.h"
 
 namespace
 {
@@ -22,8 +23,8 @@ glm::vec3 GetSmackTarget(const SMACKI* psmacki, const CM* pcm)
     const float authoredY = (0.5f - authoredTarget.y * 0.5f) * kPs2Height;
 
     const float targetX = authoredTarget.x < 0.0f
-        ? authoredX * guiScale.x
-        : static_cast<float>(g_gl.width) -
+        ? HudLeft() + authoredX * guiScale.x
+        : HudRight() -
             (kPs2Width - authoredX) * guiScale.x;
     const float targetY = authoredTarget.y > 0.0f
         ? authoredY * guiScale.y

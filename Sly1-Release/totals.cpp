@@ -1,6 +1,7 @@
 #include "totals.h"
 #include "content.h"
 #include "gui_layout.h"
+#include "safehouse/hudbox.h"
 #include "binoc.h"
 #include "wm.h"
 #include "render.h"
@@ -268,11 +269,11 @@ void DrawTotals(TOTALS* ptotals)
         if (ptotals->pbloti != nullptr)
         {
             if (ptotals->pbloti->x < 0.0f)
-                xTotals = g_gl.width + ptotals->pbloti->x * totalsScale - dxTotals;
+                xTotals = HudRight() + ptotals->pbloti->x * totalsScale - dxTotals;
             else if (ptotals->pbloti->x == 0.0f)
                 xTotals = (g_gl.width - dxTotals) * 0.5f;
             else
-                xTotals = ptotals->pbloti->x * totalsScale;
+                xTotals = HudLeft() + ptotals->pbloti->x * totalsScale;
 
             if (ptotals->pbloti->y < 0.0f) yTotals -= dyTotals - ptotals->dy;
             else if (ptotals->pbloti->y == 0.0f) yTotals -= (dyTotals - ptotals->dy) * 0.5f;

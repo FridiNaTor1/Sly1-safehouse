@@ -105,8 +105,9 @@ enum RESPK : int
 	RESPK_LanguageGerman,
 	RESPK_LanguageSpanish,
 	RESPK_LanguageItalian,
+	RESPK_HudPlacement,       // (SafeHouse: Settings.ini [Display] HUD Placement, safehouse/hudbox.h)
 
-	RESPK_Max = 84
+	RESPK_Max = 85
 };
 
 // -----------------------------------------------------------------------------
@@ -391,6 +392,9 @@ inline RESPK s_arespkVideoMenu[] =
 	RESPK_Monitor,
     RESPK_Vsync,
     RESPK_AspectRatio,
+#if defined(CANE_SAFEHOUSE)
+    RESPK_HudPlacement,
+#endif
     RESPK_Fog,
     RESPK_GuiStyle,
     RESPK_GuiScale,
@@ -442,6 +446,7 @@ inline char g_achzRespk74[64]{};
 inline char g_achzRespk75[64]{};
 inline char g_achzRespk76[64]{};
 inline char g_achzRespk77[128]{};
+inline char g_achzRespk84[128]{};
 inline char g_aachzKeyboardBindings[BTN_MAX][64]{};
 
 // -----------------------------------------------------------------------------
@@ -584,7 +589,8 @@ inline const char* s_mprespkachz[RESPK_Max] =
 	"Fran\xC3\xA7""ais",    // 80 RESPK_LanguageFrench
 	"Deutsch",              // 81 RESPK_LanguageGerman
 	"Espa\xC3\xB1""ol",    // 82 RESPK_LanguageSpanish
-	"Italiano"              // 83 RESPK_LanguageItalian
+	"Italiano",             // 83 RESPK_LanguageItalian
+	g_achzRespk84           // 84 RESPK_HudPlacement
 };
 
 // -----------------------------------------------------------------------------
@@ -652,7 +658,8 @@ inline RESPD s_arespd[RESPK_Max] =
 	{ 0, nullptr }, { 0, nullptr }, { 0, nullptr }, { 0, nullptr },
 	{ 0, nullptr }, { 0, nullptr }, { 0, nullptr }, { 0, nullptr },
 	{ 0, nullptr }, { 0, nullptr }, { 0, nullptr }, { 0, nullptr },
-	{ 0, nullptr }
+	{ 0, nullptr },
+	{ 0, nullptr }            // 84 RESPK_HudPlacement
 };
 
 // -----------------------------------------------------------------------------
