@@ -32,10 +32,9 @@ std::set<std::string> s_switches;
 
 void ShConfigureRuntime(const std::vector<std::string>& args)
 {
+	// (the arguments after the program's name: cane::Arguments leaves it out)
 	std::vector<std::string> rest;
-	if (!args.empty())
-		rest.push_back(args.front());   // (the program)
-	for (size_t i = 1; i < args.size(); ++i)
+	for (size_t i = 0; i < args.size(); ++i)
 	{
 		const std::string& option = args[i];
 		if (kValueOptions.count(option) != 0)
