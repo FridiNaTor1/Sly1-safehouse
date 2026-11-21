@@ -109,6 +109,28 @@ namespace
             (0.5f - posScreen.y * 0.5f) * static_cast<float>(g_gl.height));
     }
 
+    // The frame's bands (BuildBinocBackGround / BuildBinocOutline) have 24 segments over the canvas's width; segment
+    // -1 and segment 24 are flat pieces from far past the canvas's left / right border to it, at the height of the
+    // band's end there (the column 0 / 24 values), so the bands reach the edges of any picture (DrawBinocMaskGeometry).
+    void BinocExtendSegment(int s, int segments, float vw, int* pc0, int* pc1, float* pt0, float* pt1, float* px0, float* px1)
+    {
+        constexpr float kReach = 640.0f * 16.0f;   // (virtual units: wider than any picture up to 32:9 several times over)
+        if (s < 0)
+        {
+            *pc0 = *pc1 = 0;
+            *pt0 = *pt1 = 0.0f;
+            *px0 = -kReach;
+            *px1 = 0.0f;
+        }
+        else if (s >= segments)
+        {
+            *pc0 = *pc1 = segments;
+            *pt0 = *pt1 = 1.0f;
+            *px0 = vw;
+            *px1 = vw + kReach;
+        }
+    }
+
     void GetBinocMaskTransform(float* pscale, glm::vec2* porigin)
     {
         // Every retail BINOC primitive is authored in the same 640x492.8
@@ -120,67 +142,21 @@ namespace
 
     void DrawBinocMaskGeometry(GLuint vao, GLsizei indexCount)
     {
+        // The frame keeps the 640 x 492.8 canvas's shape on every picture: one uniform scale, centred. Past the
+        // canvas's left and right borders its bands continue flat out to the picture's edges (the extra segments
+        // BinocExtendSegment adds), so a wide picture shows the original frame with a straight band on each side
+        // instead of the curves stretched across the whole width.
         constexpr float virtualWidth = 640.0f;
-        constexpr float centreLeft = 240.0f;
-        constexpr float centreRight = 400.0f;
-
         const float scale = g_gl.uiScale;
-        const float screenWidth = static_cast<float>(g_gl.width);
-        const float screenCentre = screenWidth * 0.5f;
-        const float centreOrigin = screenCentre - virtualWidth * 0.5f * scale;
-        const float leftJoin = centreOrigin + centreLeft * scale;
-        const float rightJoin = centreOrigin + centreRight * scale;
+        const float centreOrigin = static_cast<float>(g_gl.width) * 0.5f - virtualWidth * 0.5f * scale;
 
-        struct Region
-        {
-            GLint clipLeft;
-            GLint clipRight;
-            float scaleX;
-            float translateX;
-        };
-
-        // Very narrow windows can place the joins outside the framebuffer.
-        // Clamp them so a region never receives a negative scale or scissor.
-        const float clampedLeftJoin = glm::clamp(leftJoin, 0.0f, screenWidth);
-        const float clampedRightJoin = glm::clamp(rightJoin, clampedLeftJoin, screenWidth);
-        const float rasterScaleX = static_cast<float>(g_gl.renderWidth) / screenWidth;
-        const GLint clampedLeftCut = static_cast<GLint>(std::lround(clampedLeftJoin * rasterScaleX));
-        const GLint clampedRightCut = static_cast<GLint>(std::lround(clampedRightJoin * rasterScaleX));
-        const GLint rasterWidth = g_gl.renderWidth;
-        const GLint rasterHeight = g_gl.renderHeight;
-        const float leftScale = clampedLeftJoin / centreLeft;
-        const float rightScale = (screenWidth - clampedRightJoin) / (virtualWidth - centreRight);
-        const Region regions[] =
-        {
-            { 0, clampedLeftCut, leftScale, 0.0f },
-            { clampedLeftCut, clampedRightCut, scale, centreOrigin },
-            { clampedRightCut, rasterWidth, rightScale,
-                clampedRightJoin - centreRight * rightScale }
-        };
-
-        const GLboolean scissorWasEnabled = glIsEnabled(GL_SCISSOR_TEST);
-        GLint oldScissor[4];
-        glGetIntegerv(GL_SCISSOR_BOX, oldScissor);
-        glEnable(GL_SCISSOR_TEST);
         glBindVertexArray(vao);
-
-        for (const Region& region : regions)
-        {
-            glScissor(region.clipLeft, 0,
-                std::max(region.clipRight - region.clipLeft, 0), rasterHeight);
-
-            glm::mat4 model(1.0f);
-            model = glm::translate(model,
-                glm::vec3(region.translateX, g_gl.uiOrigin.y, 0.0f));
-            model = glm::scale(model, glm::vec3(region.scaleX, scale, 1.0f));
-            glUniformMatrix4fv(u_modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-            glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_SHORT, nullptr);
-        }
-
+        glm::mat4 model(1.0f);
+        model = glm::translate(model, glm::vec3(centreOrigin, g_gl.uiOrigin.y, 0.0f));
+        model = glm::scale(model, glm::vec3(scale, scale, 1.0f));
+        glUniformMatrix4fv(u_modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_SHORT, nullptr);
         glBindVertexArray(0);
-        glScissor(oldScissor[0], oldScissor[1], oldScissor[2], oldScissor[3]);
-        if (!scissorWasEnabled)
-            glDisable(GL_SCISSOR_TEST);
     }
 }
 
@@ -1017,8 +993,8 @@ void BuildBinocBackGround(BINOC* pbinoc)
     vertices.clear();
     indices.clear();
 
-    vertices.reserve(segments * 4 * 2);
-    indices.reserve(segments * 6 * 2);
+    vertices.reserve((segments + 2) * 4 * 2);
+    indices.reserve((segments + 2) * 6 * 2);
 
     auto pushQuad = [&](uint16_t base) {
         indices.push_back(base + 0);
@@ -1043,7 +1019,7 @@ void BuildBinocBackGround(BINOC* pbinoc)
     };
 
     // ---------- Upper band ----------
-    for (int s = 0; s < segments; ++s)
+    for (int s = -1; s <= segments; ++s)
     {
         int c0 = s;
         int c1 = s + 1;
@@ -1053,6 +1029,7 @@ void BuildBinocBackGround(BINOC* pbinoc)
 
         float x0 = t0 * Vw;
         float x1 = t1 * Vw;
+        BinocExtendSegment(s, segments, Vw, &c0, &c1, &t0, &t1, &x0, &x1);
 
         float y0Curve = evalBei(s_beiUpper, c0);
         float y1Curve = evalBei(s_beiUpper, c1);
@@ -1069,7 +1046,7 @@ void BuildBinocBackGround(BINOC* pbinoc)
     }
 
     // ---------- Lower band ----------
-    for (int s = 0; s < segments; ++s)
+    for (int s = -1; s <= segments; ++s)
     {
         int c0 = s;
         int c1 = s + 1;
@@ -1079,6 +1056,7 @@ void BuildBinocBackGround(BINOC* pbinoc)
 
         float x0 = t0 * Vw;
         float x1 = t1 * Vw;
+        BinocExtendSegment(s, segments, Vw, &c0, &c1, &t0, &t1, &x0, &x1);
 
         float y0Curve = evalBei(s_beiLower, c0);
         float y1Curve = evalBei(s_beiLower, c1);
@@ -1166,7 +1144,7 @@ void BuildBinocOutline(BINOC* pbinoc)
 
     auto emitBand = [&](const BEI& bei, float direction, float offset0, float offset1)
     {
-        for (int s = 0; s < segments; ++s)
+        for (int s = -1; s <= segments; ++s)
         {
             int c0 = s;
             int c1 = s + 1;
@@ -1176,6 +1154,7 @@ void BuildBinocOutline(BINOC* pbinoc)
 
             float x0 = t0 * Vw;
             float x1 = t1 * Vw;
+            BinocExtendSegment(s, segments, Vw, &c0, &c1, &t0, &t1, &x0, &x1);
 
             float y0Curve = evalBei(bei, c0);
             float y1Curve = evalBei(bei, c1);
@@ -1856,7 +1835,8 @@ void DrawBinocOutline(BINOC* pbinoc)
     BindBlotTexture(whiteTex);
     glBindVertexArray(pbinoc->outlineVAO);
 
-    constexpr int segments = 24;
+    // (each band's 24 segments and the flat pieces left and right of the canvas: BinocExtendSegment)
+    constexpr int segments = 24 + 2;
     constexpr int verticesPerBand = segments * 4;
     constexpr int bandCount = 4;
 
