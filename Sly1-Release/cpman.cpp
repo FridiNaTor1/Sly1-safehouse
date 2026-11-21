@@ -1,6 +1,9 @@
 #include "cpman.h"
 #include "cm.h"
 #include "clock.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/debugmenu.h"
+#endif
 
 namespace
 {
@@ -21,6 +24,10 @@ void UpdateCpman(CPMAN* pcpman, CPDEFI* pcpdefi, JOY* pjoy, float dt)
 
     CM* pcm = pcpman->pcm;
     GLFWwindow* window = g_gl.window;
+#if defined(CANE_SAFEHOUSE)
+    if (FShDebugFreeCam(pcm, dt))   // (the debug menu's free camera, F1)
+        return;
+#endif
 
     if (window == nullptr)
         return;

@@ -1,4 +1,7 @@
 #include "alo.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/debugmenu.h"
+#endif
 #include "hide.h"
 #include "render.h"
 #include "target.h"
@@ -816,7 +819,11 @@ void UpdateAloXfWorldHierarchy(ALO* palo)
 
 void UpdateAloHierarchy(ALO* palo, float dt)
 {
-	if (palo->pvtalo->pfnUpdateAlo != nullptr)
+	if (palo->pvtalo->pfnUpdateAlo != nullptr
+#if defined(CANE_SAFEHOUSE)
+		&& !FShDebugSkipUpdate(palo)   // (the debug menu's noclip places it)
+#endif
+		)
 		palo->pvtalo->pfnUpdateAlo(palo, dt);
 
 	int isInSw = FIsLoInWorld(palo);

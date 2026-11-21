@@ -4,6 +4,9 @@
 #include "po.h"
 #include "hide.h"
 #include "cm.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/debugmenu.h"
+#endif
 
 void UpdateSw(SW* psw, float dt)
 {
@@ -235,7 +238,11 @@ void UpdateSwObjects(SW* psw, float dt)
 
     PO* ppo = PpoCur();
 
-    if (ppo && ppo->pvtpo->pfnUpdatePoActive)
+    if (ppo && ppo->pvtpo->pfnUpdatePoActive
+#if defined(CANE_SAFEHOUSE)
+        && !FShDebugSkipUpdate(ppo)   // (the debug menu's noclip places it)
+#endif
+        )
     {
 		JOY* pjoy = (g_grfjoyt & 2) ? &g_joy : &g_joyZero;
         ppo->pvtpo->pfnUpdatePoActive(ppo, pjoy, dt);

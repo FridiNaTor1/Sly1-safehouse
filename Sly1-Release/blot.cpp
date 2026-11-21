@@ -1,4 +1,7 @@
 #include "blot.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/debugmenu.h"
+#endif
 #include "boss.h"
 #include "gui_layout.h"
 #include "totals.h"
@@ -774,7 +777,11 @@ void DrawBlots()
     for (int i = 0; i < BLOTK_Max; ++i)
     {
         BLOT* pblot = PblotFromBlotk(i);
-        if (pblot && pblot->blots != BLOTS_Hidden)
+        if (pblot && pblot->blots != BLOTS_Hidden
+#if defined(CANE_SAFEHOUSE)
+            && !FShDebugHideBlot(i)   // (the debug menu's Hide HUD, F11)
+#endif
+            )
             pblot->pvtblot->pfnDrawBlot(pblot);
     }
 

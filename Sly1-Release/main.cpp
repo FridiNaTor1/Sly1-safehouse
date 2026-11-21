@@ -23,6 +23,7 @@
 #include "safehouse/frame.h"
 #include "safehouse/skipcut.h"
 #include "safehouse/launcher.h"
+#include "safehouse/debugmenu.h"
 #endif
 #include <atomic>
 #include <chrono>
@@ -185,6 +186,7 @@ void RunGameFrame()
 #if defined(CANE_SAFEHOUSE)
 		ShNoteLevel();
 		ShFrameResync();
+		ShDebugLevelChanged();
 #else
 		if (s_framePacer != nullptr)
 			s_framePacer->Resync();
@@ -220,6 +222,9 @@ void RunGameFrame()
 
     g_joy.Update(g_gl.window);
 #if defined(CANE_SAFEHOUSE)
+    // The debug menu (safehouse/debugmenu.h, Debug mode): F10 / R1+Select, its keys, the F keys; the game's input while
+    // the menu or the free camera has it.
+    ShUpdateDebugInput();
     // Skipping a cutscene (safehouse/skipcut.h): the hold and the hint, then the fast-forward to the scene's end.
     ShUpdateSkipCut(g_clock.dtReal);
     const bool fSkipFast = g_psw != nullptr && FShSkipCutFastForward();
@@ -227,6 +232,10 @@ void RunGameFrame()
     const bool fSkipFast = false;
 #endif
     RenderMenuGui(g_psw);
+#if defined(CANE_SAFEHOUSE)
+    if (FShDebugHasInput())
+        g_fDisableInput = true;   // (the mouse camera too)
+#endif
 
 #if defined(CANE_SAFEHOUSE)
     if (fSkipFast)
@@ -264,6 +273,9 @@ void RunGameFrame()
         MarkClockTick(&g_clock);
         UpdateCodes();
         UpdateSw(g_psw, g_clock.dt);
+#if defined(CANE_SAFEHOUSE)
+        ShUpdateDebugTools();   // (the debug menu's actions, noclip, infinite health)
+#endif
 
         if (g_fRenderModels == true)
         {
@@ -283,6 +295,7 @@ void RunGameFrame()
         DrawUi(&g_ui);
 #if defined(CANE_SAFEHOUSE)
         ShDrawSkipCut();
+        ShDrawDebug();
 #endif
     }
 #if defined(CANE_SAFEHOUSE)
