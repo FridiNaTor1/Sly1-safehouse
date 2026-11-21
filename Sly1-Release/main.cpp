@@ -611,6 +611,8 @@ int RunApplication(const std::vector<std::string>& arguments)
         RefreshContentPackage(cane::DataDirectory());
 		if (const int toolResult = StartMods(); toolResult >= 0)
 			return toolResult;
+		if (FShArgument("--gl-selftest"))
+			return ShGlSelfTest();
 #else
 		cane::ConfigureRuntime(arguments);
         RefreshContentPackage(cane::DataDirectory());

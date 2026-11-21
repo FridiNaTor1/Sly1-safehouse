@@ -17,6 +17,8 @@ void ShConfigureRuntime(const std::vector<std::string>& args);
 const std::string* ShArgument(const char* option);
 // A switch given on the command line ("--some-switch").
 bool FShArgument(const char* option);
+// --gl-selftest (selftest.cpp): the window, the context and every program, 30 frames; 0 when nothing failed.
+int ShGlSelfTest();
 
 // runtime_error.cpp: the crash handlers.
 void ShInstallCrashHandlers();

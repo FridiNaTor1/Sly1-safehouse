@@ -22,7 +22,9 @@ const std::set<std::string> kValueOptions = {
 	"--mods",            // a mods folder besides <user-dir>/Mods
 	"--cache-dir",       // re-creatable files (platform.h cacheDirectory)
 };
-const std::set<std::string> kSwitches = {};
+const std::set<std::string> kSwitches = {
+	"--gl-selftest",     // the renderer's start without a disc (selftest.cpp)
+};
 
 std::map<std::string, std::string> s_values;
 std::set<std::string> s_switches;
