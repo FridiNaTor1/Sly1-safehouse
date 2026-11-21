@@ -133,12 +133,12 @@ void GLSHADER::Init(const char* vertexFile, const char* geometryFile, const char
 	ID = CaneDeko::CreateProgram(vertexFile, geometryFile, fragmentFile);
 #else
 #if defined(CANE_SAFEHOUSE)
-	// (Vulkan: the programs are compiled at build time; there is no GLSL compiler behind the GL calls)
-	if (FRendererVulkan())
+	// (Vulkan, Metal: the programs are made at build time; there is no GLSL compiler behind the GL calls)
+	if (FPrebuiltPrograms())
 	{
-		ID = cane::vkgame::Program(vertexFile, geometryFile, fragmentFile);
+		ID = ProgramPrebuilt(vertexFile, geometryFile, fragmentFile);
 		if (ID == 0)
-			throw std::runtime_error(std::string("Vulkan program missing: ") + vertexFile);
+			throw std::runtime_error(std::string(SzRendererName()) + " program missing: " + vertexFile);
 		return;
 	}
 #endif

@@ -278,7 +278,13 @@ void InitCameraUbo();
 extern int g_rendererChoice;
 bool FRendererVulkan();
 const char* SzRendererName();
-// The debug window's draw lists (Dear ImGui): its OpenGL 3 backend on OpenGL, the GL layer's own program on Vulkan.
+// Programs made at build time instead of compiled from GLSL at run time: on Vulkan (SafeHouse's GL layer) and on Metal
+// (macOS / iOS, SafeHouse's GL-on-Metal layer: GLSL translated to Metal Shading Language). ProgramPrebuilt: the GL
+// program name of the program of these files, 0 when the build has none.
+bool FPrebuiltPrograms();
+unsigned ProgramPrebuilt(const char* vertexFile, const char* geometryFile, const char* fragmentFile);
+// The debug window's draw lists (Dear ImGui): its OpenGL 3 backend on OpenGL, the GL layer's own program on Vulkan and
+// Metal.
 void GuiRendererNewFrame();
 void GuiRendererRender(ImDrawData* pdata);
 void InitFrameStream(STREAM* pstream, int streamSize);

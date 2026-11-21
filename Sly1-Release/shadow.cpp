@@ -77,10 +77,10 @@ void main()
 		if (shadowAlphaProgram != 0)
 			return true;
 
-		if (FRendererVulkan())
+		if (FPrebuiltPrograms())
 		{
-			// (compiled at build time, from shadowalpha.vert / .frag)
-			shadowAlphaProgram = cane::vkgame::Program("shadowalpha.vert", nullptr, "shadowalpha.frag");
+			// (made at build time, from shadowalpha.vert / .frag)
+			shadowAlphaProgram = ProgramPrebuilt("shadowalpha.vert", nullptr, "shadowalpha.frag");
 			if (shadowAlphaProgram != 0 && shadowAlphaVao == 0)
 				glGenVertexArrays(1, &shadowAlphaVao);
 			return shadowAlphaProgram != 0;

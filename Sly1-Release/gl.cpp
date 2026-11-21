@@ -170,6 +170,11 @@ void GL::InitGL()
 			cane::vkgame::Choice(g_rendererChoice), config);
 	}
 #endif
+#if defined(CANE_SAFEHOUSE) && defined(__APPLE__)
+	// (macOS / iOS: no OpenGL context; the window gets a Metal layer, cane::gl::CreateContext below)
+	if (window == nullptr)
+		cane::gl::ApplyWindowHints(4, 3);
+#endif
 	if (window == nullptr)
 		window = glfwCreateWindow(width, height, "Sly Cooper and the Thievius Raccoonus", nullptr, nullptr);
 
@@ -184,7 +189,20 @@ void GL::InitGL()
 			"The game window could not be created. Update the graphics driver and verify OpenGL 4.3 support.");
 	}
 
+#if defined(CANE_SAFEHOUSE) && defined(__APPLE__)
+	{
+		std::string contextError;
+		if (!cane::gl::CreateContext(window, &contextError))
+		{
+			ReportRuntimeError("Graphics", "Could not start Metal: %s", contextError.c_str());
+			glfwDestroyWindow(window);
+			glfwTerminate();
+			throw std::runtime_error("The game could not start Metal: " + contextError);
+		}
+	}
+#else
 	cane::gl::CreateContext(window, nullptr);
+#endif
 	glfwSetFramebufferSizeCallback(window, FrameBufferSizeCallBack);
 	glfwSetWindowFocusCallback(window, WindowFocusCallback);
 	glfwSetCursorPosCallback(window, MOUSE::CursorPosCallback);
@@ -273,8 +291,8 @@ void GL::InitGL()
 	io.IniFilename = s_imguiIni.c_str();
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 #if defined(CANE_SAFEHOUSE)
-	if (FRendererVulkan())
-		cane::imgui_gl::Init(cane::vkgame::Program("imgui.vert", nullptr, "imgui.frag"));
+	if (FPrebuiltPrograms())
+		cane::imgui_gl::Init(ProgramPrebuilt("imgui.vert", nullptr, "imgui.frag"));
 	else
 #endif
 		ImGui_ImplOpenGL3_Init("#version 430");
@@ -847,7 +865,7 @@ void GL::TerminateGL()
 	glBlipShader.Delete();
 
 #if defined(CANE_SAFEHOUSE)
-	if (FRendererVulkan())
+	if (FPrebuiltPrograms())
 		cane::imgui_gl::Shutdown();
 	else
 #endif
@@ -870,13 +888,40 @@ bool FRendererVulkan()
 
 const char* SzRendererName()
 {
+#if defined(CANE_SAFEHOUSE) && defined(__APPLE__)
+	return "Metal";
+#else
 	return FRendererVulkan() ? "Vulkan" : "OpenGL";
+#endif
+}
+
+bool FPrebuiltPrograms()
+{
+#if defined(CANE_SAFEHOUSE) && defined(__APPLE__)
+	return true;
+#else
+	return FRendererVulkan();
+#endif
+}
+
+unsigned ProgramPrebuilt(const char* vertexFile, const char* geometryFile, const char* fragmentFile)
+{
+#if defined(CANE_SAFEHOUSE) && defined(__APPLE__)
+	return cane::gl_metal::Program(vertexFile, geometryFile, fragmentFile);
+#elif defined(CANE_SAFEHOUSE)
+	return FRendererVulkan() ? cane::vkgame::Program(vertexFile, geometryFile, fragmentFile) : 0u;
+#else
+	(void)vertexFile;
+	(void)geometryFile;
+	(void)fragmentFile;
+	return 0u;
+#endif
 }
 
 void GuiRendererNewFrame()
 {
 #if defined(CANE_SAFEHOUSE)
-	if (FRendererVulkan())
+	if (FPrebuiltPrograms())
 	{
 		cane::imgui_gl::NewFrame();
 		return;
@@ -888,7 +933,7 @@ void GuiRendererNewFrame()
 void GuiRendererRender(ImDrawData* pdata)
 {
 #if defined(CANE_SAFEHOUSE)
-	if (FRendererVulkan())
+	if (FPrebuiltPrograms())
 	{
 		cane::imgui_gl::Render(pdata);
 		return;
