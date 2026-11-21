@@ -1,5 +1,11 @@
 #pragma once
 
+#if defined(CANE_SAFEHOUSE) && defined(__SWITCH__)
+// SafeHouse's Nintendo Switch build: the same XAudio2 surface from SafeHouse's own mixer over the console's audio
+// output (no FAudio, no SDL there).
+#include <safehouse/switch/audio_switch.h>
+#else
+
 // Small C++ compatibility layer over FAudio. It intentionally exposes only
 // the XAudio2 surface used by ProjectCane so game-side sequencing stays shared.
 #include <FAPO.h>
@@ -274,3 +280,4 @@ inline HRESULT XAudio2Create(IXAudio2** result, uint32_t flags, uint32_t process
         *result = engine.release();
     return static_cast<HRESULT>(status);
 }
+#endif
