@@ -155,9 +155,17 @@ bool ShLoadSystemSettings(VIDEOSAVESETTINGS* settings)
 	std::printf("settings: %s (%s)\n", cane::utf8(st::sly1SettingsPath(userDir)).c_str(),
 		result == st::Sly2Load::Ok ? "read" : result == st::Sly2Load::Migrated ? "made from Saves/system_settings.dat" :
 		result == st::Sly2Load::Missing ? "new" : "unreadable: not written this run");
+#if defined(__ANDROID__) || defined(CANE_IOS)
+	// (the phones and the Quest: a new profile starts from SafeHouse's defaults, as its launcher writes them, e.g. the 3D
+	// scene at 720 lines instead of a phone panel's full resolution; elsewhere the game's own defaults)
+	if (result == st::Sly2Load::Missing)
+		s_model = st::sly1Defaults();
+	PcInputFromSettings(s_model.system);   // (the input options beside VIDEOSAVESETTINGS: pcinput.h)
+#else
 	PcInputFromSettings(s_model.system);   // (the input options beside VIDEOSAVESETTINGS: pcinput.h)
 	if (result == st::Sly2Load::Missing)
 		return false;
+#endif
 	*settings = ToGame(s_model);
 	s_given = *settings;
 	s_fGiven = true;
