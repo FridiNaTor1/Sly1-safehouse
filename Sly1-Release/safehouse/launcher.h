@@ -8,6 +8,7 @@
 //   console window or message box of the game's own when the launcher has its output.
 // - Started from the Collection Style Launcher (SAFEHOUSE_LAUNCHER=collection), the pause menu's Exit to Desktop says
 //   Quit to Launcher: the game ends as before and that launcher, which waits for it, comes back.
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,9 @@ const std::string* ShArgument(const char* option);
 bool FShArgument(const char* option);
 // The touch pad's layout on iOS / Android (touch.cpp): each frame and each movie frame.
 void ShUpdateTouchContext();
+// The rumble for the on-screen pad (the last GLFW gamepad on iOS / Android): the phone's own vibrator, the big motor as
+// its strength, kept up by ShUpdateTouchContext each frame. Nothing elsewhere.
+void ShTouchRumble(int joystickId, uint8_t highSpeedMotor, uint8_t lowSpeedMotor);
 // --gl-selftest (selftest.cpp): the window, the context and every program, 30 frames; 0 when nothing failed.
 int ShGlSelfTest();
 

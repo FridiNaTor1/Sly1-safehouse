@@ -16,6 +16,7 @@ float g_controllerDeadzone = 0.35f;
 // identified by family for the button icons, Steam Input's virtual pads resolved, the bundled mapping database),
 // the motors through SDL (platform/pad_rumble.h), the mouse through mouseinput.h, the options in pcinput.h.
 #include "safehouse/actionbind.h"
+#include "safehouse/launcher.h"
 #include "safehouse/mouseinput.h"
 #include "safehouse/pcinput.h"
 #include "prompt.h"
@@ -362,6 +363,9 @@ uint32_t s_grfKeyboardHeldPrev = 0;
 // The retail actuator bytes to the pad in use (platform/pad_rumble.h: the shared mapping and SDL device matching).
 void SetSdlRumble(const JOY* pjoy, uint8_t highSpeedMotor, uint8_t lowSpeedMotor)
 {
+    // (the phones' on-screen pad: their own vibrator, safehouse/touch.cpp)
+    ShTouchRumble(pjoy != nullptr ? pjoy->joystickId : -1, g_fControllerVibration ? highSpeedMotor : 0,
+        g_fControllerVibration ? lowSpeedMotor : 0);
 #ifdef CANE_SDL_RUMBLE
     if (pjoy == nullptr || pjoy->joystickId < 0)
         return;
