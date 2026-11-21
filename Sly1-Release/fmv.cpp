@@ -392,6 +392,18 @@ namespace
             // preserving the authored image proportions.
             height = static_cast<int>(std::ceil(framebufferWidth / videoAspect));
             y = (framebufferHeight - height) / 2;
+            // Past 16:9 (ultrawide windows) the zoom stops at the 16:9 width,
+            // which already fills the picture with the movie's area inside
+            // its bars, and the movie is pillarboxed: zooming on to the full
+            // width would cut the scene itself off at the top and bottom.
+            constexpr float kMaxZoomAspect = 16.0f / 9.0f;
+            if (windowAspect > kMaxZoomAspect && videoAspect < kMaxZoomAspect)
+            {
+                width = static_cast<int>(std::lround(framebufferHeight * kMaxZoomAspect));
+                height = static_cast<int>(std::ceil(width / videoAspect));
+                x = (framebufferWidth - width) / 2;
+                y = (framebufferHeight - height) / 2;
+            }
         }
         else
         {
