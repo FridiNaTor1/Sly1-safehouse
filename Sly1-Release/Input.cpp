@@ -273,49 +273,26 @@ std::vector<SdlControllerDevice> s_sdlControllers;
 double s_nextControllerScan = 0.0;
 #endif
 
-// The PS2 used a binary high-speed motor and an 8-bit low-speed motor. These
-// patterns retain that representation so the retail rumble scheduler can be
-// used unchanged while SDL performs the platform-specific actuator call.
-constexpr RUMINS s_ruminsSteadyBuzz[] = { { 0.08f, 1, 72 } };
-constexpr RUMINS s_ruminsLowThrob[] =
-{
-    { 0.10f, 0, 150 }, { 0.12f, 0, 0 }
-};
-constexpr RUMINS s_ruminsMediumThrob[] =
-{
-    { 0.10f, 1, 175 }, { 0.10f, 0, 20 }
-};
-constexpr RUMINS s_ruminsHardThrob[] =
-{
-    { 0.12f, 1, 255 }, { 0.08f, 0, 40 }
-};
+// The retail patterns: s_mprumkrumpat at 0x26B8B0 in SCUS_971.98 (11 RUMPATs of 0x104 bytes: crumins, then
+// {fHighSpeedMotor, bLowSpeedMotor, 2 pad, dt} per step), read from the ELF and the same as the sly1 decomp's
+// P2/rumble.c. The earlier table here was invented. {dt, high-speed motor on / off, low-speed motor 0-255}
+constexpr RUMINS s_ruminsSteadyBuzz[] = { { 0.05f, 1, 0 } };
+constexpr RUMINS s_ruminsLowThrob[] = { { 0.05f, 0, 150 }, { 0.05f, 0, 0 } };
+constexpr RUMINS s_ruminsMediumThrob[] = { { 0.05f, 0, 210 }, { 0.10f, 0, 0 } };
+constexpr RUMINS s_ruminsHardThrob[] = { { 0.10f, 0, 255 }, { 0.10f, 0, 0 } };
 constexpr RUMINS s_ruminsBlunt[] =
 {
-    { 0.07f, 1, 255 }, { 0.08f, 0, 90 }, { 0.10f, 0, 0 }
+    { 0.10f, 0, 210 }, { 0.01f, 0, 190 }, { 0.01f, 0, 170 }, { 0.01f, 0, 150 }, { 0.01f, 0, 130 }, { 0.01f, 0, 110 },
+    { 0.25f, 0, 0 }
 };
-constexpr RUMINS s_ruminsElectric[] =
-{
-    { 0.035f, 1, 80 }, { 0.035f, 0, 210 }, { 0.035f, 1, 130 }, { 0.035f, 0, 40 }
-};
-constexpr RUMINS s_ruminsFire[] =
-{
-    { 0.06f, 1, 95 }, { 0.07f, 0, 155 }, { 0.05f, 1, 55 }
-};
-constexpr RUMINS s_ruminsWater[] =
-{
-    { 0.12f, 0, 85 }, { 0.10f, 0, 145 }, { 0.12f, 0, 55 }
-};
-constexpr RUMINS s_ruminsCrush[] =
-{
-    { 0.16f, 1, 255 }, { 0.10f, 1, 190 }, { 0.10f, 0, 80 }
-};
-constexpr RUMINS s_ruminsBreak[] =
-{
-    { 0.06f, 1, 255 }, { 0.05f, 0, 35 }, { 0.08f, 1, 185 }, { 0.10f, 0, 0 }
-};
+constexpr RUMINS s_ruminsElectric[] = { { 0.10f, 1, 255 }, { 0.05f, 1, 0 } };
+constexpr RUMINS s_ruminsFire[] = { { 0.05f, 0, 170 }, { 0.10f, 0, 0 } };
+constexpr RUMINS s_ruminsWater[] = { { 0.05f, 0, 170 }, { 0.10f, 0, 0 } };
+constexpr RUMINS s_ruminsCrush[] = { { 0.05f, 0, 170 }, { 0.10f, 0, 0 } };
+constexpr RUMINS s_ruminsBreak[] = { { 0.15f, 0, 160 }, { 0.10f, 0, 0 }, { 0.05f, 0, 90 } };
 constexpr RUMINS s_ruminsBomb[] =
 {
-    { 0.14f, 1, 255 }, { 0.12f, 1, 210 }, { 0.16f, 0, 125 }, { 0.12f, 0, 0 }
+    { 0.20f, 0, 255 }, { 0.08f, 0, 0 }, { 0.13f, 0, 200 }, { 0.06f, 0, 0 }, { 0.11f, 0, 150 }
 };
 
 constexpr RUMPAT s_arumpat[RUMK_Max] =
@@ -1288,22 +1265,19 @@ void UpdateRumble(RUMBLE* prumble, JOY* pjoy)
         return;
     }
 
-    const float dt = (std::max)(0.0f, g_clock.dtReal);
-    prumble->dtRumble -= dt;
+    // orig 0x1A7B88 UpdateRumble: at most one step per frame, the step's own time (not carried over), then the
+    // pattern's time; it stops (the motors off) once that runs out
+    const float dt = g_clock.dtReal;
     prumble->dtRumins -= dt;
-
-    // Advance every elapsed instruction. The loop matters after a long frame:
-    // retail does not stretch a short pulse merely because a frame was late.
-    while (prumble->dtRumins <= 0.0f && prumble->dtRumble > 0.0f)
+    if (prumble->dtRumins <= 0.0f)
     {
-        prumble->irumins = (prumble->irumins + 1) % prumble->prumpat->crumins;
+        if (++prumble->irumins >= prumble->prumpat->crumins)
+            prumble->irumins = 0;
         const RUMINS& instruction = prumble->prumpat->arumins[prumble->irumins];
-        prumble->dtRumins += (std::max)(instruction.dt, 0.001f);
         SetSdlRumble(pjoy, instruction.fHighSpeedMotor, instruction.bLowSpeedMotor);
+        prumble->dtRumins = instruction.dt;
     }
-
-    if (prumble->dtRumble <= 0.0f)
-        StopJoyRumble(pjoy);
+    prumble->dtRumble -= dt;  // (run out: the next frame's check above stops it, as retail's RUMS_Stop)
 }
 
 void ToggleVibration(GS* pgs)
