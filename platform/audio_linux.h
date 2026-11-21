@@ -17,8 +17,14 @@ using ULONG = uint32_t;
 constexpr HRESULT S_OK = 0;
 constexpr HRESULT E_FAIL = static_cast<int32_t>(0x80004005u);
 constexpr HRESULT E_POINTER = static_cast<int32_t>(0x80004003u);
+#if defined(__APPLE__)
+// (Apple: <mach-o/dyld.h>, which the platform layer includes for the executable's path, declares
+// enum DYLD_BOOL { FALSE, TRUE } with the same values; include it first so the two never meet in either order)
+#include <mach-o/dyld.h>
+#else
 constexpr int TRUE = 1;
 constexpr int FALSE = 0;
+#endif
 inline bool FAILED(HRESULT result) { return result < 0; }
 inline bool SUCCEEDED(HRESULT result) { return result >= 0; }
 #ifndef STDMETHODCALLTYPE
