@@ -678,15 +678,19 @@ int RunApplication(const std::vector<std::string>& arguments)
 		g_gl.TerminateGL();
 		return EXIT_SUCCESS;
 	}
+	// (after a fatal error the program ends here: the sound and video threads are still running, and returning would
+	// destroy them joinable, which std::terminate()s)
 	catch (const std::exception& exception)
 	{
 		ReportFatalRuntimeError(exception.what());
-		return EXIT_FAILURE;
+		std::fflush(nullptr);
+		std::_Exit(EXIT_FAILURE);
 	}
 	catch (...)
 	{
 		ReportFatalRuntimeError("Unknown C++ exception");
-		return EXIT_FAILURE;
+		std::fflush(nullptr);
+		std::_Exit(EXIT_FAILURE);
 	}
 }
 

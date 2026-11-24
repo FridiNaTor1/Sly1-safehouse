@@ -11,6 +11,7 @@
 #include "../platform/platform.h"
 
 #include <algorithm>
+#include <stdexcept>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -602,6 +603,12 @@ void CTransition::Execute(std::string& file)
 
     if (g_psw != nullptr)
         SetMvgkRvol(g_psw->uMusicVolume, 1, 1);
+
+    // A level that cannot be loaded (a missing or damaged file) ends the game with an error that names it, instead
+    // of leaving the player in the old level with the door or warp silently doing nothing.
+    if (!fLoadSucceeded)
+        throw std::runtime_error("World loading failed: " + fileNew +
+            " could not be loaded (see the log above). The installation may be damaged.");
 
     m_plevelPending = nullptr;
     m_worldPending.clear();
