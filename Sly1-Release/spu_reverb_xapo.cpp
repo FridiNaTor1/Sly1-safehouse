@@ -222,9 +222,10 @@ void SpuMixSaturator::Process(UINT32 inputCount,
 	const UINT32 frames = inputs[0].ValidFrameCount;
 	auto* input = static_cast<const float*>(inputs[0].pBuffer);
 	auto* output = static_cast<float*>(outputs[0].pBuffer);
+	// (the input's flags read first: the parameters may be one struct in place, see SpuStudioCReverb::Process)
+	const bool silent = inputs[0].BufferFlags == XAPO_BUFFER_SILENT;
 	outputs[0].ValidFrameCount = frames;
 	outputs[0].BufferFlags = inputs[0].BufferFlags;
-	const bool silent = inputs[0].BufferFlags == XAPO_BUFFER_SILENT;
 	constexpr float kSpuPositiveMaximum = 32767.0f / 32768.0f;
 	if (!m_finalOutput)
 	{
@@ -550,6 +551,12 @@ void SpuStudioCReverb::Process(UINT32 inputCount,
 	const UINT32 frames = inputs[0].ValidFrameCount;
 	auto* input = static_cast<const float*>(inputs[0].pBuffer);
 	auto* output = static_cast<float*>(outputs[0].pBuffer);
+	// Read the input's flags before writing any output field: processing in place, XAudio2 may hand the same
+	// buffer parameters as input and output, so setting the output VALID below would make a SILENT input look
+	// valid. A SILENT input buffer holds stale data (here: this processor's own last output), and reading it fed
+	// the reverb its own wet return as new input: a feedback loop that grew into a full-scale howl whenever the
+	// wet send went quiet in a Studio C room (ProjectCane #49, High Class Heist's water section, Windows only).
+	const bool inputSilent = inputs[0].BufferFlags == XAPO_BUFFER_SILENT;
 	outputs[0].ValidFrameCount = frames;
 	if (!m_active.load(std::memory_order_acquire))
 	{
@@ -575,8 +582,8 @@ void SpuStudioCReverb::Process(UINT32 inputCount,
 	bool producedOutput = false;
 	for (UINT32 frame = 0; frame < frames; ++frame)
 	{
-		float left = inputs[0].BufferFlags == XAPO_BUFFER_SILENT ? 0.0f : input[frame * 2];
-		float right = inputs[0].BufferFlags == XAPO_BUFFER_SILENT ? 0.0f : input[frame * 2 + 1];
+		float left = inputSilent ? 0.0f : input[frame * 2];
+		float right = inputSilent ? 0.0f : input[frame * 2 + 1];
 		// Reject malformed first-buffer samples before converting them to the
 		// SPU's fixed-point domain. lround(NaN/Inf) is not a safe conversion and
 		// could otherwise turn a rare device-start transient into full-scale noise.
@@ -591,8 +598,7 @@ void SpuStudioCReverb::Process(UINT32 inputCount,
 
 	// Once both the output and every fixed-point delay/filter element are empty,
 	// propagate SILENT so XAudio can stop scheduling an exhausted reverb tail.
-	if (inputs[0].BufferFlags == XAPO_BUFFER_SILENT && !producedOutput &&
-		!HasStateUnlocked())
+	if (inputSilent && !producedOutput && !HasStateUnlocked())
 	{
 		outputs[0].BufferFlags = XAPO_BUFFER_SILENT;
 	}
