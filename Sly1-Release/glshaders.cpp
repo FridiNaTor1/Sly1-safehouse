@@ -22,6 +22,9 @@ GLuint s_activeShaderProgram = (std::numeric_limits<GLuint>::max)();
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
+#if defined(CANE_SAFEHOUSE) && defined(CANE_GLES1)
+#include <safehouse/render/gles_sly1.h>
+#endif
 
 namespace
 {
@@ -154,6 +157,15 @@ void GLSHADER::Init(const char* vertexFile, const char* geometryFile, const char
 
 	if (fragmentFile != NULL)
 		fragmentCode = GetEmbeddedShaderSource(fragmentFile);
+#if defined(CANE_SAFEHOUSE) && defined(CANE_GLES1)
+	// (OpenGL ES: the GLSL 4.30 sources with an ES header, gles_sly1.h)
+	if (cane::gles1::Active())
+	{
+		for (std::string* pcode : { &vertexCode, &geometryCode, &fragmentCode })
+			if (!pcode->empty())
+				*pcode = cane::gles1::TranslateShader(*pcode);
+	}
+#endif
 
 	const char* vertexSource   = NULL;
 	const char* geometrySource = NULL;

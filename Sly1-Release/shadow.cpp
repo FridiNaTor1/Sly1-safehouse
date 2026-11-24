@@ -6,6 +6,10 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#if defined(CANE_SAFEHOUSE) && defined(CANE_GLES1)
+#include <string>
+#include <safehouse/render/gles_sly1.h>
+#endif
 
 namespace
 {
@@ -54,6 +58,15 @@ void main()
 
 	GLuint CompileShadowAlphaShader(GLenum type, const char* source)
 	{
+#if defined(CANE_SAFEHOUSE) && defined(CANE_GLES1)
+		// (OpenGL ES: the GLSL 4.30 source with an ES header, gles_sly1.h)
+		std::string translated;
+		if (cane::gles1::Active())
+		{
+			translated = cane::gles1::TranslateShader(source);
+			source = translated.c_str();
+		}
+#endif
 		const GLuint shader = glCreateShader(type);
 		glShaderSource(shader, 1, &source, nullptr);
 		glCompileShader(shader);

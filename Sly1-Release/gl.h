@@ -274,7 +274,7 @@ class GL
 void InitCameraUbo();
 // The renderer behind the GL calls (InitGL, the window's creation): 0 Auto (Vulkan where it starts, else OpenGL), 1
 // Vulkan, 2 OpenGL; the settings set it before the window exists (SLY1_RENDERER overrides it). FRendererVulkan: the
-// game runs on Vulkan (SafeHouse's GL layer); SzRendererName: "Vulkan" / "OpenGL".
+// game runs on Vulkan (SafeHouse's GL layer); SzRendererName: "Vulkan" / "OpenGL" / "OpenGL ES 3.x" / "Metal".
 extern int g_rendererChoice;
 bool FRendererVulkan();
 const char* SzRendererName();
@@ -283,8 +283,11 @@ const char* SzRendererName();
 // program name of the program of these files, 0 when the build has none.
 bool FPrebuiltPrograms();
 unsigned ProgramPrebuilt(const char* vertexFile, const char* geometryFile, const char* fragmentFile);
-// The debug window's draw lists (Dear ImGui): its OpenGL 3 backend on OpenGL, the GL layer's own program on Vulkan and
-// Metal.
+// The debug window's draw lists (Dear ImGui): its OpenGL 3 backend on OpenGL, SafeHouse's imgui_gl on Vulkan, Metal
+// and OpenGL ES (FImguiGl).
+#if defined(CANE_SAFEHOUSE)
+bool FImguiGl();
+#endif
 void GuiRendererNewFrame();
 void GuiRendererRender(ImDrawData* pdata);
 void InitFrameStream(STREAM* pstream, int streamSize);

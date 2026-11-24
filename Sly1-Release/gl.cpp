@@ -8,6 +8,9 @@
 #include "runtime_error.h"
 #if defined(CANE_SAFEHOUSE)
 #include <safehouse/render/imgui_gl.h>
+#if defined(CANE_GLES1)
+#include <safehouse/render/gles_sly1.h>
+#endif
 #include "safehouse/settings.h"
 #include "safehouse/mouseinput.h"
 #endif
@@ -170,8 +173,24 @@ void GL::InitGL()
 		config.envRenderer = "SLY1_RENDERER";
 		config.programs = kprograms;
 		config.programCount = 4;
+#if defined(CANE_GLES1)
+		// (Android: OpenGL ES when Vulkan is not chosen or cannot start, gles_sly1.h)
+		config.glesFallback = true;
+#if !defined(__ANDROID__)
+		// (Linux: SLY1_RENDERER=gles, the OpenGL ES test mode, comes up on an ES context without trying Vulkan)
+		if (!cane::gles1::Wanted())
+#endif
+#endif
 		window = cane::vkgame::OpenWindow(width, height, fVisibleHint, "Sly Cooper and the Thievius Raccoonus",
 			cane::vkgame::Choice(g_rendererChoice), config);
+	}
+#endif
+#if defined(CANE_SAFEHOUSE) && defined(CANE_GLES1)
+	// OpenGL ES 3.2, else 3.1 (Android's GLFW layer picks the version by itself)
+	for (int minor = 2; window == nullptr && minor >= 1 && cane::gles1::Wanted(); --minor)
+	{
+		cane::gles1::ApplyWindowHints(minor);
+		window = glfwCreateWindow(width, height, "Sly Cooper and the Thievius Raccoonus", nullptr, nullptr);
 	}
 #endif
 #if defined(CANE_SAFEHOUSE) && defined(__APPLE__)
@@ -219,6 +238,19 @@ void GL::InitGL()
 			"GLAD could not load the required OpenGL functions. Update the graphics driver and verify OpenGL 4.3 support.");
 		throw std::runtime_error("OpenGL function loading failed.");
 	}
+#if defined(CANE_SAFEHOUSE) && defined(CANE_GLES1)
+	// (an OpenGL ES context: the ES entry points under the desktop names the game calls, gles_sly1.h)
+	if (!FRendererVulkan() && cane::gles1::ContextIsEs())
+	{
+		std::string esError;
+		if (!cane::gles1::Init(esError))
+		{
+			ReportRuntimeError("Graphics", "OpenGL ES cannot run the game: %s", esError.c_str());
+			throw std::runtime_error("This device's graphics cannot run the game: " + esError +
+				". It needs Vulkan, or OpenGL ES 3.1 with vertex-stage storage buffers.");
+		}
+	}
+#endif
 	glstate::Sync();
 
 	// GLFW window dimensions are logical screen coordinates and can differ
@@ -274,10 +306,10 @@ void GL::InitGL()
 		maxVertexOutputComponents < kRequiredVertexOutputComponents)
 	{
 		ReportRuntimeError("Graphics",
-			"GPU shader limits are below ProjectCane's renderer requirements. "
+			"GPU shader limits are below ProjectCane's renderer requirements (%s). "
 			"Vertex SSBOs %d/%d, combined SSBOs %d/%d, SSBO bindings %d/%d, "
 			"vertex outputs %d/%d. Update the graphics driver or select a more capable GPU.",
-			maxVertexSsboBlocks, kRequiredVertexSsboBlocks,
+			SzRendererName(), maxVertexSsboBlocks, kRequiredVertexSsboBlocks,
 			maxCombinedSsboBlocks, kRequiredCombinedSsboBlocks,
 			maxSsboBindings, kRequiredSsboBindings,
 			maxVertexOutputComponents, kRequiredVertexOutputComponents);
@@ -297,6 +329,10 @@ void GL::InitGL()
 #if defined(CANE_SAFEHOUSE)
 	if (FPrebuiltPrograms())
 		cane::imgui_gl::Init(ProgramPrebuilt("imgui.vert", nullptr, "imgui.frag"));
+#if defined(CANE_GLES1)
+	else if (cane::gles1::Active())
+		cane::imgui_gl::Init(cane::gles1::ImguiProgram());
+#endif
 	else
 #endif
 		ImGui_ImplOpenGL3_Init("#version 430");
@@ -869,7 +905,7 @@ void GL::TerminateGL()
 	glBlipShader.Delete();
 
 #if defined(CANE_SAFEHOUSE)
-	if (FPrebuiltPrograms())
+	if (FImguiGl())
 		cane::imgui_gl::Shutdown();
 	else
 #endif
@@ -895,6 +931,10 @@ const char* SzRendererName()
 #if defined(CANE_SAFEHOUSE) && defined(__APPLE__)
 	return "Metal";
 #else
+#if defined(CANE_SAFEHOUSE) && defined(CANE_GLES1)
+	if (cane::gles1::Active())
+		return cane::gles1::Name();
+#endif
 	return FRendererVulkan() ? "Vulkan" : "OpenGL";
 #endif
 }
@@ -922,10 +962,22 @@ unsigned ProgramPrebuilt(const char* vertexFile, const char* geometryFile, const
 #endif
 }
 
+#if defined(CANE_SAFEHOUSE)
+// Dear ImGui through SafeHouse's imgui_gl: the build-time programs (Vulkan, Metal) and OpenGL ES
+bool FImguiGl()
+{
+#if defined(CANE_GLES1)
+	if (cane::gles1::Active())
+		return true;
+#endif
+	return FPrebuiltPrograms();
+}
+#endif
+
 void GuiRendererNewFrame()
 {
 #if defined(CANE_SAFEHOUSE)
-	if (FPrebuiltPrograms())
+	if (FImguiGl())
 	{
 		cane::imgui_gl::NewFrame();
 		return;
@@ -937,7 +989,7 @@ void GuiRendererNewFrame()
 void GuiRendererRender(ImDrawData* pdata)
 {
 #if defined(CANE_SAFEHOUSE)
-	if (FPrebuiltPrograms())
+	if (FImguiGl())
 	{
 		cane::imgui_gl::Render(pdata);
 		return;
@@ -986,6 +1038,15 @@ bool FBufferStorageAvailable()
 	{
 		s_bufferStorageState = 0;
 		// (asked of the context only while there is one: another renderer behind the GL calls has none)
+#if defined(CANE_SAFEHOUSE) && defined(CANE_GLES1)
+		// (OpenGL ES: EXT_buffer_storage's entry point, gles_sly1.h)
+		if (cane::gles1::Active())
+		{
+			s_pfnBufferStorage = reinterpret_cast<PFNCANEBUFFERSTORAGEPROC>(cane::gles1::BufferStorageProc());
+			s_bufferStorageState = s_pfnBufferStorage != nullptr ? 1 : 0;
+			return s_bufferStorageState == 1;
+		}
+#endif
 		const bool fSupported = GLVersion.major > 4 || (GLVersion.major == 4 && GLVersion.minor >= 4) ||
 			(glfwGetCurrentContext() != nullptr && glfwExtensionSupported("GL_ARB_buffer_storage"));
 		if (fSupported)
