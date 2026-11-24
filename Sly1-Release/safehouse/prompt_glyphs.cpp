@@ -18,6 +18,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <map>
+#include <vector>
 #include <optional>
 #include <stdexcept>
 
@@ -40,6 +42,73 @@ constexpr GLYPHACTION s_aglyphaction[] =
     { '!', BTN_START }, { '_', BTN_SELECT },
     { '^', BTN_UP }, { 'v', BTN_DOWN }, { '<', BTN_LEFT }, { '>', BTN_RIGHT }
 };
+
+// Four keys as one keycap cluster (up above, left / down / right below, as W A S D on a keyboard), made from the
+// keyboard atlas' caps once per set of keys; 0 when a key has no cap.
+GLuint KeyClusterTexture(const std::array<int, 4>& keys)
+{
+    static std::map<std::array<int, 4>, GLuint> s_mptex;
+    if (const auto it = s_mptex.find(keys); it != s_mptex.end())
+        return it->second;
+    GLuint& texture = s_mptex[keys];
+    namespace pa = cane::input::prompt_atlas;
+    std::array<cane::input::PromptRect, 4> arect{};
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        bool found = false;
+        for (const cane::input::PromptKeyRect& key : pa::kPromptKeyRects)
+            if (key.key == cane::input::promptKeyForBinding(keys[i]))
+                arect[i] = key.rect, found = true;
+        if (!found)
+            return texture;
+    }
+    cane::input::embedded::Image atlas = cane::input::embedded::decodePromptAtlas(int(Family::Keyboard));
+    if (atlas.rgba == nullptr)
+        return texture;
+    // a 128 x 128 picture: caps of 44 pixels, the first on top in the middle, the others in a row below
+    constexpr int n = 128, cap = 44;
+    std::vector<uint8_t> rgba(size_t(n) * n * 4, 0);
+    static constexpr int s_axy[4][2] = { { 42, 18 }, { -2, 64 }, { 42, 64 }, { 86, 64 } };
+    for (size_t i = 0; i < 4; ++i)
+        for (int y = 0; y < cap; ++y)
+            for (int x = 0; x < cap; ++x)
+            {
+                const int dx = s_axy[i][0] + x, dy = s_axy[i][1] + y;
+                if (dx < 0 || dy < 0 || dx >= n || dy >= n)
+                    continue;
+                // (box filter from the 112-pixel cell)
+                const cane::input::PromptRect& r = arect[i];
+                const int sx0 = r.x + x * r.w / cap, sx1 = r.x + (x + 1) * r.w / cap;
+                const int sy0 = r.y + y * r.h / cap, sy1 = r.y + (y + 1) * r.h / cap;
+                float acc[4] = {}, c = 0.0f;
+                for (int sy = sy0; sy < std::max(sy1, sy0 + 1); ++sy)
+                    for (int sx = sx0; sx < std::max(sx1, sx0 + 1); ++sx)
+                    {
+                        const uint8_t* p = atlas.rgba + (size_t(sy) * size_t(atlas.width) + size_t(sx)) * 4;
+                        const float a = float(p[3]) / 255.0f;
+                        acc[0] += p[0] * a, acc[1] += p[1] * a, acc[2] += p[2] * a, acc[3] += a, c += 1.0f;
+                    }
+                uint8_t* q = &rgba[(size_t(dy) * n + size_t(dx)) * 4];
+                if (acc[3] > 0.0f)
+                    q[0] = uint8_t(acc[0] / acc[3]), q[1] = uint8_t(acc[1] / acc[3]), q[2] = uint8_t(acc[2] / acc[3]);
+                q[3] = uint8_t(std::min(255.0f, acc[3] / c * 255.0f + 0.5f));
+            }
+    cane::input::embedded::freeImage(atlas);
+    GLint previous = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous);
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexStorage2D(GL_TEXTURE_2D, 8, GL_RGBA8, n, n);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, n, n, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, GLuint(previous));
+    return texture;
+}
 
 std::string KeyLabel(int key)
 {
@@ -117,6 +186,40 @@ PROMPTGLYPH PromptGlyphFor(char ch)
     // glyph). The cell keeps the original glyph's width.
     if (family == Family::Keyboard)
     {
+        // The sticks and the d-pad (tutorial lines such as "Use the left &2(&. to move around"): the left stick the
+        // movement keys as one cluster (W A S D by default), the right one the mouse (the camera keys when the mouse
+        // camera is off), the d-pad the camera keys (the arrows: they move the menus' highlight).
+        if (ch == '(' || ch == ')' || ch == '+')
+        {
+            int key = GLFW_KEY_UNKNOWN;
+            std::array<int, 4> cluster{ GLFW_KEY_UNKNOWN, GLFW_KEY_UNKNOWN, GLFW_KEY_UNKNOWN, GLFW_KEY_UNKNOWN };
+            if (ch == '(')
+                cluster = { sly1actions::BindingForButton(BTN_UP, false), sly1actions::BindingForButton(BTN_LEFT, false),
+                            sly1actions::BindingForButton(BTN_DOWN, false), sly1actions::BindingForButton(BTN_RIGHT, false) };
+            else if (ch == ')' && g_fMouseCamera)
+                key = cane::input::kMouseMoveKey;
+            else
+                cluster = { g_cameraKeyBindings[2], g_cameraKeyBindings[0], g_cameraKeyBindings[3], g_cameraKeyBindings[1] };
+            if (cluster == std::array<int, 4>{ GLFW_KEY_UP, GLFW_KEY_LEFT, GLFW_KEY_DOWN, GLFW_KEY_RIGHT })
+                key = cane::input::kArrowKeysKey;   // (the atlas' own arrows cap)
+            if (key != GLFW_KEY_UNKNOWN)
+            {
+                const cane::input::IconUV uv = atlas.keyUV(key);
+                if (!uv.valid || atlas.keyboardTexture() == 0)
+                    return glyph;
+                glyph.kind = PROMPTGLYPH::Icon;
+                glyph.texture = atlas.keyboardTexture();
+                glyph.u0 = uv.u0, glyph.v0 = uv.v0, glyph.u1 = uv.u1, glyph.v1 = uv.v1;
+                return glyph;
+            }
+            if (const GLuint texture = KeyClusterTexture(cluster); texture != 0)
+            {
+                glyph.kind = PROMPTGLYPH::Icon;
+                glyph.texture = texture;
+                glyph.u0 = 0.0f, glyph.v0 = 1.0f, glyph.u1 = 1.0f, glyph.v1 = 0.0f;
+            }
+            return glyph;
+        }
         const JOY_BUTTON button = JoyButtonFromPromptGlyph(ch);
         if (button == BTN_MAX)
             return glyph;
