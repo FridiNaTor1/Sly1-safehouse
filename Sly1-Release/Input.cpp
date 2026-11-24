@@ -316,7 +316,8 @@ constexpr RUMPAT s_arumpat[RUMK_Max] =
 cane::rumble::SdlRumble s_sdlRumble;
 #endif
 
-// A newly pressed key counts as keyboard use for the button icons: every bound key, the camera keys and Escape.
+// A newly pressed key counts as keyboard use for the button icons: every bound key, the camera keys, Escape and the
+// rhythm minigame's keys.
 bool FKeyHeld(GLFWwindow* window, int key)
 {
     return key >= GLFW_KEY_SPACE && key <= GLFW_KEY_LAST && glfwGetKey(window, key) == GLFW_PRESS;
@@ -333,6 +334,9 @@ uint32_t GrfKeyboardHeld(GLFWwindow* window)
             grf |= 1U << (BTN_MAX + i);
     if (FKeyHeld(window, GLFW_KEY_ESCAPE))
         grf |= 1U << (BTN_MAX + 4);
+    for (int slot = 0; slot < cane::settings::kSly1RhythmKeyCount; ++slot)
+        if (FKeyHeld(window, sly1actions::RhythmKey(slot)))
+            grf |= 1U << (BTN_MAX + 5 + slot);
     return grf;
 }
 
@@ -680,6 +684,8 @@ void JOY::Update(GLFWwindow* window)
     UpdateMouseInput(window);
     const bool fMenu = g_prompt.fActive && g_prompt.blots != BLOTS_Hidden;
     const bool fFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE;
+    // The rhythm minigame's own keys (actionbind.h RhythmKeysLive): its buttons while it plays, nothing else on them.
+    const bool fRhythmKeys = this == &g_joy && sly1actions::RhythmKeysLive(fMenu);
     for (int button = 0; button < BTN_MAX; ++button)
     {
         const int key = g_keyboardBindings[button];
@@ -688,8 +694,16 @@ void JOY::Update(GLFWwindow* window)
         if (fMenu && g_mouseopt.fMenus &&
             (key == MouseBindingFromButton(GLFW_MOUSE_BUTTON_LEFT) || key == MouseBindingFromButton(GLFW_MOUSE_BUTTON_RIGHT)))
             continue;
+        if (fRhythmKeys && sly1actions::FRhythmKey(key))
+            continue;
         current[button] = FMouseBinding(key) ? FMouseBindingHeld(key) : FKeyHeld(window, key);
     }
+    if (fRhythmKeys)
+        for (int slot = 0; slot < cane::settings::kSly1RhythmKeyCount; ++slot)
+        {
+            const JOY_BUTTON button = static_cast<JOY_BUTTON>(cane::settings::kSly1RhythmPads[slot]);
+            current[button] = current[button] || FKeyHeld(window, sly1actions::RhythmKey(slot));
+        }
     // Escape is a fixed second Start: it pauses, and backs out of the menus.
     if (fFocused && FKeyHeld(window, GLFW_KEY_ESCAPE))
         current[BTN_START] = true;
@@ -772,7 +786,7 @@ void JOY::Update(GLFWwindow* window)
     // Advanced Input Mapping (actionbind.h): the buttons from every action's own binding in the current context.
     if (sly1actions::Active())
     {
-        sly1actions::HeldButtons(window, haveGamepadState ? &state : nullptr, fMenu && g_mouseopt.fMenus, current);
+        sly1actions::HeldButtons(window, haveGamepadState ? &state : nullptr, fMenu && g_mouseopt.fMenus, fRhythmKeys, current);
         if (fFocused && FKeyHeld(window, GLFW_KEY_ESCAPE))
             current[BTN_START] = true;
     }

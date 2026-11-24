@@ -160,6 +160,14 @@ void FromGame(st::Sly1Settings& s, const VIDEOSAVESETTINGS& v, const VIDEOSAVESE
 }
 }
 
+// The input options beside VIDEOSAVESETTINGS (pcinput.h), the rhythm minigame's keys among them.
+static void InputFromModel()
+{
+	PcInputFromSettings(s_model.system);
+	for (int i = 0; i < st::kSly1RhythmKeyCount; ++i)
+		g_rhythmKeyBindings[size_t(i)] = s_model.sly1.rhythmKeys[size_t(i)];
+}
+
 bool ShLoadSystemSettings(VIDEOSAVESETTINGS* settings)
 {
 	const auto userDir = cane::userDirectory();
@@ -174,9 +182,9 @@ bool ShLoadSystemSettings(VIDEOSAVESETTINGS* settings)
 	// game's own defaults)
 	if (result == st::Sly2Load::Missing)
 		s_model = st::sly1Defaults();
-	PcInputFromSettings(s_model.system);   // (the input options beside VIDEOSAVESETTINGS: pcinput.h)
+	InputFromModel();
 #else
-	PcInputFromSettings(s_model.system);   // (the input options beside VIDEOSAVESETTINGS: pcinput.h)
+	InputFromModel();
 	if (result == st::Sly2Load::Missing)
 		return false;
 #endif

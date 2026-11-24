@@ -23,6 +23,10 @@ extern bool g_fAutoCameraRotation;
 // applies when on). Defined in Input.cpp.
 extern bool g_fControllerVibration;
 
+// The rhythm minigame's own keys with the standard bindings (Settings.ini [Keyboard] Rhythm Triangle / Square / Circle /
+// Cross, system_settings.h kSly1RhythmPads' order; W, A, D, Space by default): actionbind.h RhythmKeysLive says when
+// they are read.
+extern std::array<int, 4> g_rhythmKeyBindings;
 // The keyboard camera keys' up / down this input update (1 up, -1 down, 0 neither or a menu has them), set by
 // JOY::Update beside the right stick they drive: in the binocucom they look up / down as the arrows' left / right look
 // around (cplook.cpp), instead of zooming. Defined in Input.cpp.

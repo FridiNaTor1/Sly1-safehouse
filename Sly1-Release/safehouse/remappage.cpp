@@ -32,11 +32,12 @@ using cane::input::Family;
 namespace input = cane::sly1input;
 
 enum ROWKIND { RK_Icons, RK_OriginalPs, RK_AutoCamera, RK_MouseInvertX, RK_MouseInvertY, RK_Advanced, RK_Header,
-               RK_Binding, RK_CameraKey, RK_Reset, RK_Back };
+               RK_Binding, RK_CameraKey, RK_RhythmKey, RK_Reset, RK_Back };
 struct ROW
 {
     ROWKIND kind = RK_Binding;
-    int index = 0;           // RK_Binding: the JOY_BUTTON (standard) or the action (advanced); RK_CameraKey: 0..3
+    int index = 0;           // RK_Binding: the JOY_BUTTON (standard) or the action (advanced); RK_CameraKey: 0..3;
+                             // RK_RhythmKey: the rhythm slot 0..3 (system_settings.h kSly1RhythmPads)
     std::string label;
 };
 
@@ -131,6 +132,7 @@ std::string StrGroup(const std::string& group)
         { "Menus", "Menus", "Menüs", "Menús", "Menu" },
         { "Vehicles and minigames", "Véhicules et mini-jeux", "Fahrzeuge und Minispiele", "Vehículos y minijuegos",
           "Veicoli e minigiochi" },
+        { "Rhythm minigame", "Mini-jeu de rythme", "Rhythmus-Minispiel", "Minijuego de ritmo", "Minigioco del ritmo" },
     };
     for (const auto& asz : s_aszGroup)
         if (group == asz[0])
@@ -191,6 +193,15 @@ std::vector<ROW> Arow()
     a.push_back({RK_Header, 0, T("Camera keys", "Touches de caméra", "Kameratasten", "Teclas de cámara", "Tasti telecamera")});
     for (int i = 0; i < 4; ++i)
         a.push_back({RK_CameraKey, i, T(s_aszCamera[i][0], s_aszCamera[i][1], s_aszCamera[i][2], s_aszCamera[i][3], s_aszCamera[i][4])});
+    // the rhythm minigame's own keys (standard bindings; with the mapping on they are its actions' keys, above)
+    if (!sly1actions::Active())
+    {
+        a.push_back({RK_Header, 0, StrGroup("Rhythm minigame")});
+        for (int slot = 0; slot < cane::settings::kSly1RhythmKeyCount; ++slot)
+            for (size_t i = 0; i < input::kActionCount; ++i)
+                if (input::kActions[i].context == input::Context::Rhythm && input::kActions[i].pad == cane::settings::kSly1RhythmPads[slot])
+                    a.push_back({RK_RhythmKey, slot, StrAction(i)});
+    }
     a.push_back({RK_Reset, 0, T("Reset to Defaults", "Réinitialiser", "Standard wiederherstellen", "Restablecer", "Ripristina")});
     a.push_back({RK_Back, 0, T("Back", "Retour", "Zurück", "Atrás", "Indietro")});
     return a;
@@ -198,11 +209,14 @@ std::vector<ROW> Arow()
 bool FSelectable(const ROW& r) { return r.kind != RK_Header; }
 bool FOption(const ROW& r) { return r.kind <= RK_Advanced; }
 
-// the binding shown in a cell (-2: no binding possible there, the right stick's fixed role)
+// the binding shown in a cell (-2: no binding possible there, the right stick's fixed role; -3: none possible either,
+// the rhythm minigame's button itself, bound with the controls above)
 int Binding(const ROW& r, bool controller)
 {
     if (r.kind == RK_CameraKey)
         return controller ? -2 : g_cameraKeyBindings[size_t(r.index)];
+    if (r.kind == RK_RhythmKey)
+        return controller ? -3 : g_rhythmKeyBindings[size_t(r.index)];
     if (r.kind != RK_Binding)
         return -2;
     if (sly1actions::Active())
@@ -239,8 +253,20 @@ void Bind(const ROW& r, bool controller, int binding)
     if (controller)
         return;
     const int key = binding < 0 ? GLFW_KEY_UNKNOWN : binding;
-    if (r.kind == RK_CameraKey && FMouseBinding(key))
+    if ((r.kind == RK_CameraKey || r.kind == RK_RhythmKey) && FMouseBinding(key))
         return;
+    if (r.kind == RK_RhythmKey)
+    {
+        // (its keys may be the movement's: they only count in the minigame; among themselves the two swap)
+        const int old = g_rhythmKeyBindings[size_t(r.index)];
+        if (key != GLFW_KEY_UNKNOWN)
+            for (int& k : g_rhythmKeyBindings)
+                if (k == key)
+                    k = old;
+        g_rhythmKeyBindings[size_t(r.index)] = key;
+        SaveStandard();
+        return;
+    }
     int* pkey = r.kind == RK_Binding ? &g_keyboardBindings[size_t(r.index)] : &g_cameraKeyBindings[size_t(r.index)];
     const int old = *pkey;
     if (key != GLFW_KEY_UNKNOWN)
@@ -270,6 +296,8 @@ void ResetDefaults()
     ResetKeyboardMouseBindings();
     ResetControllerBindings();
     g_cameraKeyBindings = { GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_UP, GLFW_KEY_DOWN };
+    for (int i = 0; i < cane::settings::kSly1RhythmKeyCount; ++i)
+        g_rhythmKeyBindings[size_t(i)] = cane::settings::kSly1DefaultRhythmKeys[i];
     SaveStandard();
 }
 
@@ -386,7 +414,8 @@ void Activate(const std::vector<ROW>& arow, int irow, int dir)
     case RK_Back: CloseRemapPage(); return;
     case RK_Binding:
     case RK_CameraKey:
-        if (Binding(r, s_remap.col == 1) == -2)
+    case RK_RhythmKey:
+        if (Binding(r, s_remap.col == 1) <= -2)
             return;
         if (sly1actions::Active() && sly1actions::profile.readOnly && r.kind == RK_Binding)
             return;
@@ -540,7 +569,7 @@ void UpdateRemapPage(JOY* pjoy)
         const ROW& r = arow[size_t(s_remap.isel)];
         if (FOption(r))
             Activate(arow, s_remap.isel, d);
-        else if (r.kind == RK_Binding || r.kind == RK_CameraKey)
+        else if (r.kind == RK_Binding || r.kind == RK_CameraKey || r.kind == RK_RhythmKey)
         {
             const int col = std::clamp(s_remap.col + d, 0, 1);
             if (col != s_remap.col)
@@ -558,8 +587,9 @@ void UpdateRemapPage(JOY* pjoy)
     }
     const bool fDelete = window != nullptr && glfwGetKey(window, GLFW_KEY_DELETE) == GLFW_PRESS;
     if ((pjoy->IsPressed(BtnClear()) || fDelete) && (arow[size_t(s_remap.isel)].kind == RK_Binding ||
-                                                    arow[size_t(s_remap.isel)].kind == RK_CameraKey) &&
-        Binding(arow[size_t(s_remap.isel)], s_remap.col == 1) != -2)
+                                                    arow[size_t(s_remap.isel)].kind == RK_CameraKey ||
+                                                    arow[size_t(s_remap.isel)].kind == RK_RhythmKey) &&
+        Binding(arow[size_t(s_remap.isel)], s_remap.col == 1) > -2)
     {
         Bind(arow[size_t(s_remap.isel)], s_remap.col == 1, -1);
         s_remap.fWaitRelease = fDelete;
@@ -639,6 +669,20 @@ void Cell(const ROW& r, bool controller, float cx, float cy, bool fSel, Family f
     if (binding == -2)
     {
         Icon(atlas.texture(family), atlas.uv(family, Button::RS), cx, cy, h, 0.55f);
+        return;
+    }
+    if (binding == -3)
+    {
+        // (the minigame's button: the controller plays it with that button's own binding)
+        const int pad = cane::settings::kSly1RhythmPads[r.index];
+        const Button b = cane::input::fromGlfwBinding(g_gamepadBindings[size_t(pad)]);
+        if (family == Family::PlayStation)
+        {
+            if (const char ch = cane::input::psGlyphFor(b); ch != '\0')
+                Text(std::string("&2") + ch + "&.", cx, cy - size * 0.62f, size * 1.2f, Gs(80, 80, 80), JH_Center);
+        }
+        else if (atlas.texture(family) != 0 && atlas.uv(family, b).valid)
+            Icon(atlas.texture(family), atlas.uv(family, b), cx, cy, h, 0.55f);
         return;
     }
     if (binding < 0)
@@ -723,7 +767,7 @@ void DrawRemapPage()
         if (fSel)
         {
             Rect(l.x0 + 8.0f * l.u, y + 1.0f, l.x1 - 8.0f * l.u, y + l.dyRow - 1.0f, Gs(30, 30, 30, 110));
-            if (r.kind == RK_Binding || r.kind == RK_CameraKey)
+            if (r.kind == RK_Binding || r.kind == RK_CameraKey || r.kind == RK_RhythmKey)
             {
                 const float xc = s_remap.col ? l.xController : l.xKeyboard;
                 Rect(xc - l.wCell * 0.45f, y + 2.0f, xc + l.wCell * 0.45f, y + l.dyRow - 2.0f, Gs(54, 54, 54, 110));
@@ -759,6 +803,7 @@ void DrawRemapPage()
             break;
         case RK_Binding:
         case RK_CameraKey:
+        case RK_RhythmKey:
         {
             Text(r.label, l.x0 + 26.0f * l.u, yText, sizeRow, rgba, JH_Left, l.xKeyboard - l.wCell * 0.5f - l.x0 - 30.0f * l.u);
             for (int c = 0; c < 2; ++c)

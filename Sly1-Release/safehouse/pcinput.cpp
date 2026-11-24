@@ -17,6 +17,9 @@ int g_promptStyle = 0;
 bool g_fAlwaysOriginalPsLayout = false;
 bool g_fAutoCameraRotation = true;
 void (*g_pfnPcInputSave)() = nullptr;
+std::array<int, 4> g_rhythmKeyBindings = { cane::settings::kSly1DefaultRhythmKeys[0], cane::settings::kSly1DefaultRhythmKeys[1],
+                                           cane::settings::kSly1DefaultRhythmKeys[2], cane::settings::kSly1DefaultRhythmKeys[3] };
+static_assert(cane::settings::kSly1RhythmKeyCount == 4);
 
 namespace st = cane::settings;
 
@@ -64,6 +67,8 @@ void PcInputSave()
     // (Settings.ini, safehouse/settings.h: these options into the file's record, upstream's own through
     // SaveSystemSettings' VIDEOSAVESETTINGS)
     PcInputToSettings(ShSettingsMutable().system);
+    for (int i = 0; i < st::kSly1RhythmKeyCount; ++i)
+        ShSettingsMutable().sly1.rhythmKeys[size_t(i)] = g_rhythmKeyBindings[size_t(i)];
     SaveSystemSettings();
 }
 

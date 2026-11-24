@@ -3,6 +3,7 @@
 #if defined(CANE_SAFEHOUSE)
 #include "actionbind.h"
 #include "mouseinput.h"
+#include "pcinput.h"
 #include "../po.h"
 #include "../sw.h"
 #include <safehouse/controller_family.h>
@@ -69,32 +70,67 @@ bool FPadHeld(const GLFWgamepadstate& pad, int binding)
 }
 }
 
-void HeldButtons(GLFWwindow* window, const GLFWgamepadstate* pad, bool fBlockMenuMouse, JOY::BUTTONS& held)
+void HeldButtons(GLFWwindow* window, const GLFWgamepadstate* pad, bool fBlockMenuMouse, bool fRhythmKeys, JOY::BUTTONS& held)
 {
     held.fill(false);
     const Context context = CurrentContext();
+    // (the keyboard: the rhythm minigame's actions only while its keys are live; in its menus the common ones)
+    const Context contextKeys = context == Context::Rhythm && !fRhythmKeys ? Context::Any : context;
     for (size_t i = 0; i < input::kActionCount; ++i)
     {
-        if (!input::applies(profile, Action(i), context))
-            continue;
         const int key = profile.keyboard[i];
         bool fHeld = false;
-        if (FMouseBinding(key))
-            fHeld = !(fBlockMenuMouse && (key == MouseBindingFromButton(GLFW_MOUSE_BUTTON_LEFT) ||
-                                          key == MouseBindingFromButton(GLFW_MOUSE_BUTTON_RIGHT))) &&
-                FMouseBindingHeld(key);
-        else
-            fHeld = FKeyHeld(window, key);
-        if (pad != nullptr)
+        if (input::applies(profile, Action(i), contextKeys) &&
+            !(fRhythmKeys && input::kActions[i].context != Context::Rhythm && FRhythmKey(key)))
+        {
+            if (FMouseBinding(key))
+                fHeld = !(fBlockMenuMouse && (key == MouseBindingFromButton(GLFW_MOUSE_BUTTON_LEFT) ||
+                                              key == MouseBindingFromButton(GLFW_MOUSE_BUTTON_RIGHT))) &&
+                    FMouseBindingHeld(key);
+            else
+                fHeld = FKeyHeld(window, key);
+        }
+        if (pad != nullptr && input::applies(profile, Action(i), context))
             fHeld = fHeld || FPadHeld(*pad, profile.gamepad[i]);
         held[input::kActions[i].pad] = held[input::kActions[i].pad] || fHeld;
     }
+}
+
+bool RhythmKeysLive(bool fMenu)
+{
+    return !fMenu && CurrentContext() == Context::Rhythm;
+}
+
+int RhythmKey(int slot)
+{
+    if (slot < 0 || slot >= cane::settings::kSly1RhythmKeyCount)
+        return GLFW_KEY_UNKNOWN;
+    if (!Active())
+        return g_rhythmKeyBindings[size_t(slot)];
+    for (size_t i = 0; i < input::kActionCount; ++i)
+        if (input::kActions[i].context == Context::Rhythm && input::kActions[i].pad == cane::settings::kSly1RhythmPads[slot])
+            return profile.keyboard[i];
+    return GLFW_KEY_UNKNOWN;
+}
+
+bool FRhythmKey(int key)
+{
+    if (key == GLFW_KEY_UNKNOWN)
+        return false;
+    for (int slot = 0; slot < cane::settings::kSly1RhythmKeyCount; ++slot)
+        if (RhythmKey(slot) == key)
+            return true;
+    return false;
 }
 
 int BindingForButton(int button, bool controller)
 {
     if (button < 0 || button >= BTN_MAX)
         return -1;
+    // (the keyboard in the rhythm minigame: its own keys, whatever the mapping)
+    const int slot = cane::settings::sly1RhythmSlot(button);
+    if (!controller && slot >= 0 && CurrentContext() == Context::Rhythm)
+        return RhythmKey(slot);
     if (Active())
     {
         const Context context = CurrentContext();
