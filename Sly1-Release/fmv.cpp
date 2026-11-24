@@ -462,7 +462,11 @@ namespace
         const bool musicWasPaused = FMusicSequencerPaused();
         const bool ambientSoundsWerePaused = FAmbientsPaused() != 0;
         const float masterVolumeBeforeMovie = GetMasterVolume();
-        if (isStartupSplash)
+        // The startup movie is queued by the first world (Paris) once it has loaded and started its own song, so
+        // that song is only paused, as for any other movie: discarding it left the intro and the title screen with
+        // no music. A song is discarded only when a level change follows the movie (the next world starts its own).
+        const bool fKillMusic = isStartupSplash && g_transition.m_fPending != 0;
+        if (fKillMusic)
             KillMusic();
         else
             PauseMusicSequencer();
@@ -817,10 +821,9 @@ namespace
             ReportRuntimeError("FMV", "Decode failed for '%s': %s (FFmpeg code %d)",
                 videoPathUtf8.c_str(), AvError(result).c_str(), result);
         SetMasterVolume(masterVolumeBeforeMovie);
-        // Startup playback permanently discarded splash.brx's sequencer above;
-        // the destination world starts a fresh song after loading. Other
-        // movies restore the song they interrupted when no transition follows.
-        if (!musicWasPaused && !isStartupSplash && g_transition.m_fPending == 0)
+        // A song discarded above is gone (the destination world starts a fresh one after loading); otherwise the
+        // song the movie interrupted goes on when no transition follows.
+        if (!musicWasPaused && !fKillMusic && g_transition.m_fPending == 0)
             ContinueMusicSequencer(!ambientSoundsWerePaused);
         if (ambientSoundsWerePaused)
             PauseAmbientSounds();
