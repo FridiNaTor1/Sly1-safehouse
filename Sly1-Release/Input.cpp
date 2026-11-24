@@ -824,7 +824,8 @@ void JOY::Update(GLFWwindow* window)
             else if (binding == GAMEPAD_BINDING_RIGHT_TRIGGER)
                 fSkip = fSkip || state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER] > 0.25f;
 #if defined(__ANDROID__) || defined(CANE_IOS)
-            if (activeJoystickId == GLFW_JOYSTICK_LAST && FShSkipSceneLive())
+            // (while the skip has its input: a scene, a movie, or the hold not yet released after a skip)
+            if (activeJoystickId == GLFW_JOYSTICK_LAST && fSkipCaptured)
                 fSkip = fSkip || state.buttons[GLFW_GAMEPAD_BUTTON_B] == GLFW_PRESS;
 #endif
         }
