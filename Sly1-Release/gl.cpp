@@ -313,6 +313,13 @@ void GL::InitGL()
 			maxCombinedSsboBlocks, kRequiredCombinedSsboBlocks,
 			maxSsboBindings, kRequiredSsboBindings,
 			maxVertexOutputComponents, kRequiredVertexOutputComponents);
+#if defined(CANE_SAFEHOUSE) && defined(CANE_GLES1)
+		// (OpenGL ES, a phone or headset without Vulkan: what the device lacks, for the launcher's message)
+		if (cane::gles1::Active())
+			throw std::runtime_error("This device's graphics cannot run the game on OpenGL ES (vertex storage buffers " +
+				std::to_string(maxVertexSsboBlocks) + " of " + std::to_string(kRequiredVertexSsboBlocks) +
+				"). It needs Vulkan, or OpenGL ES 3.1 with more shader storage buffers.");
+#endif
 		throw std::runtime_error("GPU shader resource limits are insufficient.");
 	}
 #endif
