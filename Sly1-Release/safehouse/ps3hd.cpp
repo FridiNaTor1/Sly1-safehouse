@@ -424,10 +424,16 @@ std::vector<IMG2> LoadPcbrxImages(const fs::path& path, std::string& error)
 // As SafeHouse's Sly 2 (Sly2-Release/ps3hd.cpp): the PS3 texels scaled to the PS2 size against the PS2 texels, premultiplied by alpha:
 // the mean absolute difference (0..255 a channel, the PS2's alpha) and the correlation of the luminance on a coarse
 // grid (the PS2's dithering and the PS3's smooth redraw agree there).
+// And the colour alone (chroma: R - G and B - G) on a coarse grid (8 x 8 cells: the PS3's redrawn edges average out):
+// chroma, the mean absolute difference over the whole image, and over the PS2 image's colourful cells (more than 12 of
+// chroma) colourLost, the difference there, against colour2, the PS2's own colour there. The PS3 levels sample one bitmap
+// with several palettes, some grey or another hue (Sly's eyes: orange, grey, purple), whose luminance matches the PS2
+// image as well as the right palette's or better; without the colour Sly's irises were taken from the grey one.
 struct MATCH
 {
-    double mad = 1e9, r = 0, sd2 = 0;
-    double Score() const { return mad + 20.0 * (1.0 - r); }
+    double mad = 1e9, r = 0, sd2 = 0, chroma = 1e9, colourLost = 0, colour2 = 0;
+    int ccolourful = 0;
+    double Score() const { return mad + 20.0 * (1.0 - r) + 2.0 * chroma + colourLost; }
 };
 
 MATCH MatchAgainst(const IMG& a2, const IMG& a3)
@@ -439,6 +445,8 @@ MATCH MatchAgainst(const IMG& a2, const IMG& a3)
     const int cx = (dx + c - 1) / c, cy = (dy + c - 1) / c;
     std::vector<double> al2(size_t(cx) * cy), al3(size_t(cx) * cy);
     double sum = 0;
+    std::array<double, 128> ach2{}, ach3{};
+    std::array<int, 64> acell{};
     for (int y = 0; y < dy; ++y)
         for (int x = 0; x < dx; ++x)
         {
@@ -459,20 +467,47 @@ MATCH MatchAgainst(const IMG& a2, const IMG& a3)
             }
             const uint8_t* pu = &a2.rgba[(size_t(y) * dx + x) * 4];
             const double a2a = std::min(1.0, pu[3] / 128.0), a3a = std::min(1.0, v[3] / 128.0);
-            double l2 = 0, l3 = 0;
+            double l2 = 0, l3 = 0, c2[3] = {}, c3[3] = {};
             for (int k = 0; k < 4; ++k)
             {
                 const double u = k < 3 ? pu[k] * a2a : pu[k], w = k < 3 ? v[k] * a3a : v[k];
                 sum += std::fabs(w - u);
+                if (k < 3) c2[k] = u, c3[k] = w;
                 static constexpr double s_aw[4] = {0.299, 0.587, 0.114, 0};
                 l2 += s_aw[k] * u;
                 l3 += s_aw[k] * w;
+            }
+            {
+                const size_t ig = (size_t(y * 8 / dy) * 8 + size_t(x * 8 / dx)) * 2;
+                ach2[ig] += c2[0] - c2[1], ach2[ig + 1] += c2[2] - c2[1];
+                ach3[ig] += c3[0] - c3[1], ach3[ig + 1] += c3[2] - c3[1];
+                ++acell[ig / 2];
             }
             al2[size_t(y / c) * cx + size_t(x / c)] += l2;
             al3[size_t(y / c) * cx + size_t(x / c)] += l3;
         }
     MATCH m;
     m.mad = sum / (double(dx) * dy * 4);
+    {
+        double d = 0, lost = 0, own = 0;
+        int n = 0;
+        for (size_t i = 0; i < 64; ++i)
+        {
+            if (!acell[i]) continue;
+            double dCell = 0, ownCell = 0;
+            for (size_t k = 0; k < 2; ++k)
+            {
+                dCell += std::fabs(ach2[i * 2 + k] - ach3[i * 2 + k]) / acell[i] * 0.5;
+                ownCell += std::fabs(ach2[i * 2 + k]) / acell[i] * 0.5;
+            }
+            d += dCell;
+            ++n;
+            if (ownCell > 12.0) lost += dCell, own += ownCell, ++m.ccolourful;
+        }
+        m.chroma = n ? d / n : 0.0;
+        m.colourLost = m.ccolourful ? lost / m.ccolourful : 0.0;
+        m.colour2 = m.ccolourful ? own / m.ccolourful : 0.0;
+    }
     double s2 = 0, s3 = 0, s22 = 0, s33 = 0, s23 = 0;
     const double n = double(al2.size());
     for (size_t i = 0; i < al2.size(); ++i)
@@ -488,7 +523,12 @@ MATCH MatchAgainst(const IMG& a2, const IMG& a3)
 
 // The thresholds of Sly 2's pairs (checked by eye there, and on Sly 1's). The PCBRX side is BC1 / BC3
 // compressed (a few levels of error), well inside them.
-bool FAccept(const MATCH& m) { return m.mad <= 12.0 && (m.r >= 0.85 || (m.sd2 < 4.0 && m.mad < 3.0)); }
+// And the colour (MATCH above): not a PS3 palette that lost or changed the PS2 image's colour where it has some (a grey
+// palette of the same bitmap loses all of it, one of another hue more).
+bool FAccept(const MATCH& m)
+{
+    return m.mad <= 12.0 && (m.r >= 0.85 || (m.sd2 < 4.0 && m.mad < 3.0)) && !(m.ccolourful >= 3 && m.colourLost > 0.9 * m.colour2);
+}
 
 float ThumbDistance(const IMG& a, const IMG& b)
 {
@@ -619,7 +659,7 @@ int Ps3HdTexturesCommand(const fs::path& installation, const std::string& source
     cane::TexturePackWriter pack;
     if (!pack.Open(dirOut, png)) return fail("Cannot write the texture pack in " + out + ".");
     FILE* pfTsv = std::fopen(cane::utf8(dirOut / "ps3hd-textures.tsv").c_str(), "w");
-    if (pfTsv) std::fprintf(pfTsv, "ps3_level\tlevel\tps2_name\tps2_size\tps3_size\tmad\tr\tresult\n");
+    if (pfTsv) std::fprintf(pfTsv, "ps3_level\tlevel\tps2_name\tps2_size\tps3_size\tmad\tr\tchroma\tresult\n");
     std::set<std::string> setWritten, setLevelDone;
     int clevel = 0, cwritten = 0, csame = 0, cmismatch = 0, cmissing = 0, csmaller = 0;
     uint64_t cbWritten = 0;
@@ -770,7 +810,10 @@ int Ps3HdTexturesCommand(const fs::path& installation, const std::string& source
             for (size_t i = 0; i < acand.size() && i < 8; ++i)
             {
                 const MATCH m = MatchAgainst(im2.img, *acand[i].second);
-                if (m.Score() < best.Score()) best = m, pbest = acand[i].second;
+                // (an acceptable candidate before any other: the best score may be a palette the checks refuse while
+                // a slightly worse one of the right colour passes them)
+                const bool fOk = FAccept(m), fBestOk = pbest && FAccept(best);
+                if ((fOk && !fBestOk) || (fOk == fBestOk && m.Score() < best.Score())) best = m, pbest = acand[i].second;
             }
             const char* result;
             if (!pbest) { result = "no-ps3"; ++cmissing; }
@@ -795,8 +838,9 @@ int Ps3HdTexturesCommand(const fs::path& installation, const std::string& source
                 FWritePng(dir / (im2.name.substr(0, im2.name.size() - 4) + "_ps3.png"), *pbest);
             }
             if (pfTsv)
-                std::fprintf(pfTsv, "%s\t%s\t%s\t%dx%d\t%s\t%.2f\t%.3f\t%s\n", e.name.c_str(), l2.name.c_str(), im2.name.c_str(), im2.img.dx, im2.img.dy,
-                             pbest ? (std::to_string(pbest->dx) + "x" + std::to_string(pbest->dy)).c_str() : "-", pbest ? best.mad : -1.0, best.r, result);
+                std::fprintf(pfTsv, "%s\t%s\t%s\t%dx%d\t%s\t%.2f\t%.3f\t%.2f\t%s\n", e.name.c_str(), l2.name.c_str(), im2.name.c_str(), im2.img.dx, im2.img.dy,
+                             pbest ? (std::to_string(pbest->dx) + "x" + std::to_string(pbest->dy)).c_str() : "-", pbest ? best.mad : -1.0, best.r,
+                             pbest ? best.chroma : -1.0, result);
         }
         std::printf("ps3hd: %-22s -> %-28s images %zu / %zu (installation / PS3), %d written (votes %.1f, next %.1f)\n", e.name.c_str(),
                     l2.name.c_str(), aimg2.size(), aimg3.size(), cw, votes, second);
