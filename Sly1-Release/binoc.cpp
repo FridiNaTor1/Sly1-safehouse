@@ -2290,9 +2290,17 @@ void DrawBinoc(BINOC* pbinoc)
     const float textHeight = static_cast<float>(pbinoc->pfont->m_dyUnscaled) * pbinoc->pfont->m_ryScale;
     const float boxWidth = UiSize(boxWidthVirtual);
     const float boxHeight = textHeight * static_cast<float>(visibleLineCount);
-    // The talk windows reach out toward the edges on wide pictures (safehouse/hudbox.h TvBoxShift): the text and its
-    // pause icon stay beside Bentley's window, as in the original, at the same size and width (same line breaks).
-    const float xTalkShift = state != BINOCS_Confront ? TvBoxShift() : 0.0f;
+    // The talk text sits centred between the talk windows' inner edges (Bentley's on the left, Sly's on the right), as
+    // the original's 4:3 layout has it (the windows at x 1..161 and 479..639, the text box 180..460 around 320). The
+    // windows reach out toward the edges on wide pictures (safehouse/hudbox.h TvBoxWidth), the text stays centred
+    // between them, at the same size and width (same line breaks, lines left-aligned in the block), its pause icon
+    // with it.
+    float xTalkShift = 0.0f;
+    if (state != BINOCS_Confront && g_tvLeft.dx > 0.0f && g_tvRight.dx > 0.0f)
+    {
+        const float xCentre = (g_tvLeft.xOn + g_tvLeft.dx + g_tvRight.xOn) * 0.5f;
+        xTalkShift = xCentre - UiX(320.0f + offsetX);
+    }
     const float clipX = UiX(180.0f + offsetX) + xTalkShift;
     const float clipY = UiY(386.80002f + offsetY);
 

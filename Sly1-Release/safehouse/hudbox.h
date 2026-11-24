@@ -56,9 +56,3 @@ inline constexpr float kTvBoxAspectMax = 2.4f;
 inline float TvBoxWidth() { return (std::min)(static_cast<float>(g_gl.width), g_gl.height * kTvBoxAspectMax); }
 inline float TvBoxLeft() { return (g_gl.width - TvBoxWidth()) * 0.5f; }
 inline float TvBoxRight() { return TvBoxLeft() + TvBoxWidth(); }
-// How far the left talk window (and the talk text beside it) moved out from its place in the 4:3 box.
-inline float TvBoxShift()
-{
-	const float width43 = (std::min)(static_cast<float>(g_gl.width), g_gl.height * (4.0f / 3.0f));
-	return TvBoxLeft() - (g_gl.width - width43) * 0.5f;
-}
