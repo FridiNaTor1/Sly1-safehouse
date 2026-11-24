@@ -191,17 +191,28 @@ void FreeSwXpList(SW* psw, XP* pxp)
 {
     while (pxp != nullptr)
     {
-        XP* pxpNext = pxp->pxpNext;
-
         auto it = std::find_if(psw->axp.begin(), psw->axp.end(),
             [pxp](const std::unique_ptr<XP>& pxpOwned)
             {
                 return pxpOwned.get() == pxp;
             });
 
-        if (it != psw->axp.end())
-            psw->axp.erase(it);
+        // A list that reaches an XP the world no longer owns (freed before, by another list sharing it): its
+        // pxpNext is freed memory, so the walk stops there instead of reading it. The rest of that list was
+        // freed with it or is still owned by psw->axp (released with the world).
+        if (it == psw->axp.end())
+        {
+            static bool s_fReported = false;
+            if (!s_fReported)
+            {
+                s_fReported = true;
+                std::printf("FreeSwXpList: an XP freed twice (the rest of its list left alone)\n");
+            }
+            break;
+        }
 
+        XP* pxpNext = pxp->pxpNext;
+        psw->axp.erase(it);
         pxp = pxpNext;
     }
 }
