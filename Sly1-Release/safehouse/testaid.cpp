@@ -25,7 +25,7 @@
 //   watch=NAME      a per-frame log line ("watch NAME ...") after each world update: vault, exit, charm, crfod (the
 //                   Down Home Cooking roosters: alive, pairs touching / overlapping, a line a second; crfodnear: each
 //                   frame a pair is near), mts, music (the
-//                   sequencer paused, the UI state, the power-up clock rate), gl (an OpenGL error left by the frame
+//                   sequencer paused, the UI state, the power-up clock rate, the music's pause volume and dialogue duck), gl (an OpenGL error left by the frame
 //                   before; a count line every 600 frames)
 #include "testaid.h"
 #include "../gl.h"
@@ -264,8 +264,8 @@ void ShTestFrame()
 		if (++s_cframe % 600 == 0) std::printf("watch gl frames=%d errors=%d\n", s_cframe, s_cerror);
 	}
 	if (s_setWatch.count("music"))
-		std::printf("watch music f=%d paused=%d uis=%d t=%.2f rt=%.2f\n", g_cframe, int(FMusicSequencerPaused()), int(g_ui.uis),
-		            g_clock.tReal, g_rtClockPowerUp);
+		std::printf("watch music f=%d paused=%d uis=%d t=%.2f rt=%.2f volume=%.2f duck=%.2f\n", g_cframe, int(FMusicSequencerPaused()),
+		            int(g_ui.uis), g_clock.tReal, g_rtClockPowerUp, s_musicVolume, s_dialogMusicDuck);
 	if (s_setWatch.count("crfod"))
 	{
 		// pairs of live roosters (CRFODK): touching (a contact the solver made, what SgsNextCrfodkAI tests) and
