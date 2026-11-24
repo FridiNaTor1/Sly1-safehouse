@@ -6706,9 +6706,11 @@ int s_sfxidLast = 0;
 int g_fSneakyFeet = 0;
 
 #if defined(CANE_SAFEHOUSE)
-// --export-wav (safehouse/musmod.cpp): plays one .mus through the game's own music engine for `seconds`. The caller
-// points SDL's audio at its "disk" driver first, so the engine's output is captured to a file instead of heard.
-bool PlayMusicFileForCapture(const std::filesystem::path& path, double seconds)
+// --export-wav (safehouse/musmod.cpp): plays one .mus through the game's own music engine for `seconds`. With pmix
+// null the caller has pointed SDL's audio at its "disk" driver first (FAudio), so the engine's output is captured to a
+// file instead of heard; with pmix (Windows: XAudio2 has no such driver) the mix is taken from the mastering voice's
+// final output processor (SpuMixSaturator's capture, at most kDiagnosticSampleCapacity samples), interleaved stereo.
+bool PlayMusicFileForCapture(const std::filesystem::path& path, double seconds, std::vector<float>* pmix)
 {
 	StartupSound();
 	InitializeSoundOptions();
@@ -6732,7 +6734,26 @@ bool PlayMusicFileForCapture(const std::filesystem::path& path, double seconds)
 		s_musicStream.state = MusicState::Playing;
 		s_musicStream.paused = false;
 	}
+#ifdef _WIN32
+	SpuMixSaturator* pcapture = pmix != nullptr ? s_finalOutputProcessor : nullptr;
+#else
+	void* pcapture = nullptr;   // (FAudio: no final output processor; the caller uses SDL's disk driver)
+#endif
+	if (pmix != nullptr && pcapture == nullptr)
+	{
+		std::fprintf(stderr, "the audio engine has no final output processor to capture\n");
+		ShutdownSound();
+		return false;
+	}
+#ifdef _WIN32
+	if (pcapture != nullptr)
+		pcapture->BeginDiagnosticCapture();
+#endif
 	std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+#ifdef _WIN32
+	if (pcapture != nullptr)
+		*pmix = pcapture->EndDiagnosticCapture().output;
+#endif
 	ShutdownSound();
 	return true;
 }

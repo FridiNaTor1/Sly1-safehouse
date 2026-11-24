@@ -17,7 +17,7 @@
 
 namespace fs = std::filesystem;
 
-bool PlayMusicFileForCapture(const std::filesystem::path& path, double seconds);   // (sound.cpp)
+bool PlayMusicFileForCapture(const std::filesystem::path& path, double seconds, std::vector<float>* pmix);   // (sound.cpp)
 
 namespace
 {
@@ -426,16 +426,22 @@ int ExportWav(const std::vector<std::string>& args)
     const fs::path out = cane::path(args[2]);
     std::vector<float> samples;   // interleaved stereo float at 48 kHz
 #ifdef _WIN32
-    // (XAudio2 has no disk driver; the old in-tree port captured its final output processor's mix. Not ported yet.)
-    (void)out; (void)seconds; (void)samples;
-    std::fprintf(stderr, "--export-wav: not available on Windows yet\n");
-    return 1;
+    // (XAudio2 has no disk driver: the mix is captured from the mastering voice's final output processor, which
+    // holds 30 s)
+    constexpr double kSecondsMax = 30.0;
+    if (seconds > kSecondsMax)
+    {
+        std::printf("--export-wav: at most %.0f s on Windows\n", kSecondsMax);
+        seconds = kSecondsMax;
+    }
+    std::printf("playing %s for %.0f s ...\n", args[1].c_str(), seconds);
+    if (!PlayMusicFileForCapture(cane::path(args[1]), seconds, &samples)) return 1;
 #else
     const fs::path raw = fs::path(out).concat(".raw");
     setenv("SDL_AUDIODRIVER", "disk", 1);
     setenv("SDL_DISKAUDIOFILE", raw.c_str(), 1);
     std::printf("playing %s for %.0f s ...\n", args[1].c_str(), seconds);
-    if (!PlayMusicFileForCapture(cane::path(args[1]), seconds)) return 1;
+    if (!PlayMusicFileForCapture(cane::path(args[1]), seconds, nullptr)) return 1;
     std::ifstream input(raw, std::ios::binary);
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)), {});
     input.close();
