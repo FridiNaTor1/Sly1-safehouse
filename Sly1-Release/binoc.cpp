@@ -1474,6 +1474,22 @@ void DrawBinocBackground(BINOC* pbinoc)
     DrawBinocMaskGeometry(pbinoc->backGroundBinocVAO,
         static_cast<GLsizei>(pbinoc->backGroundBinocIndices.size()));
 
+    // A picture taller than the 640 x 492.8 canvas (narrower than 4:3: 5:4, 1:1, a portrait window): the frame's top band
+    // continues up to the picture's top edge and its bottom band (behind the talk windows) down to the bottom edge, flat,
+    // as its bands continue sideways on wide pictures, so no unframed world shows above or below it.
+    const float yCanvasTop = g_gl.uiOrigin.y;
+    const float yCanvasBottom = g_gl.uiOrigin.y + 492.8f * g_gl.uiScale;
+    // (half a pixel: a 4:3 or wider picture's rounding draws nothing)
+    if (yCanvasTop > 0.5f)
+    {
+        // (edge to edge with the canvas, no overlap: the overlay is translucent; the blot quad's buffers)
+        glBindVertexArray(g_gl.gao);
+        RenderGlyphQuad(0.0f, 0.0f, static_cast<float>(g_gl.width), yCanvasTop, 0.0f, 0.0f, 1.0f, 1.0f, RGBA_Overlay);
+        RenderGlyphQuad(0.0f, yCanvasBottom, static_cast<float>(g_gl.width), static_cast<float>(g_gl.height) - yCanvasBottom,
+                0.0f, 0.0f, 1.0f, 1.0f, RGBA_Overlay);
+        glBindVertexArray(0);
+    }
+
     glDepthRange(depthRangePrevious[0], depthRangePrevious[1]);
     glDepthMask(depthWriteWasEnabled);
     glDepthFunc(depthFuncPrevious);
