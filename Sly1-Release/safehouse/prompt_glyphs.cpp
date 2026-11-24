@@ -505,6 +505,18 @@ void TestPromptGlyphs()
     require(PromptGlyphFor('a').kind == PROMPTGLYPH::Original && PromptGlyphFor('b').kind == PROMPTGLYPH::Original,
         "autosave glyphs substituted");
     require(PromptGlyphFor('Q').kind == PROMPTGLYPH::Original, "non-prompt glyph substituted");
+    {
+        // the skip's own glyph: the bound controller button's original glyph (R1 by default), a glyph's width
+        const int skipPad = g_skipPadBinding;
+        cane::input::tracker().force(Family::PlayStation);
+        g_skipPadBinding = GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER;
+        require(PromptGlyphFor(PROMPTGLYPH_SKIP).ch == 'R' && font.DxFromCh(PROMPTGLYPH_SKIP) == plain.DxFromCh('R'),
+            "the skip's glyph: R1");
+        g_skipPadBinding = GLFW_GAMEPAD_BUTTON_Y;
+        require(PromptGlyphFor(PROMPTGLYPH_SKIP).ch == 'T', "a moved skip: its button's glyph");
+        g_skipPadBinding = skipPad;
+        cane::input::tracker().force(Family::Xbox);
+    }
     require(PromptButtonForGlyph('(') == Button::LS && PromptButtonForGlyph(')') == Button::RS &&
         PromptButtonForGlyph('+') == Button::Dpad, "stick and d-pad glyphs");
     {
