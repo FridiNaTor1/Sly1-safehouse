@@ -1,5 +1,19 @@
 #include "solve.h"
 
+// The SOs RenumberSo numbers under a root (the root and its SO descendants, the same walk).
+static int CpsoRenumberSo(SO* pso)
+{
+    int cpso = 1;
+
+    for (LO* plo = pso->dlChild.ploFirst; plo != nullptr; plo = plo->dleChild.ploNext)
+    {
+        if ((plo->pvtlo->grfcid & 2U) != 0)
+            cpso += CpsoRenumberSo(static_cast<SO*>(plo));
+    }
+
+    return cpso;
+}
+
 void SolveSwGroup(SW* psw, int cpsoRoot, SO** apsoRoot, int cpxp, XP** apxp, float dt, GRFSG grfsg)
 {
     if ((grfsg & GRFSG_Pivot) == 0) {
@@ -65,7 +79,9 @@ void SolveSwGroup(SW* psw, int cpsoRoot, SO** apsoRoot, int cpxp, XP** apxp, flo
         SO* psoRoot = apsoRoot[i];
 
         psoRoot->ipsoRoot = i;
-        aapsoStorage[i].resize(48);
+        // The original's renumber table holds 48 SOs per root; a bigger hierarchy would write past it (RenumberSo
+        // has no bound), so the table is sized for the hierarchy.
+        aapsoStorage[i].resize(std::max(48, CpsoRenumberSo(psoRoot)));
         aapso[i] = aapsoStorage[i].data();
         psoRoot->pvtso->pfnRenumberSo(psoRoot, &acpso[i], aapso[i]);
     }
