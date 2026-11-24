@@ -5,7 +5,10 @@
 #include "../fmv.h"
 #include "../po.h"
 #include "../sw.h"
+#include "../transition.h"
+#include "actionbind.h"
 #include <chrono>
+#include <string>
 
 // The game clock's real time (g_clock.tReal: not the loads), plus the wall time of the movies (which play in real
 // time, outside the game clock). Called once per swap.
@@ -30,4 +33,17 @@ extern "C" int ShSmokePlayerPos(float* xyz)
 	xyz[1] = ppo->xf.posWorld.y;
 	xyz[2] = ppo->xf.posWorld.z;
 	return 1;
+}
+
+// The scene for a screenshot's log line: the world (level) and the player's vehicle or minigame (actionbind.h's
+// contexts: any, turret, van, tank, puffer, jetpack, rhythm, vault), e.g. "world=Paris ctx=any".
+extern "C" const char* ShSmokeScene()
+{
+	static const char* const s_aszContext[] = { "any", "turret", "van", "tank", "puffer", "jetpack", "rhythm", "vault" };
+	static std::string s_scene;
+	const int context = static_cast<int>(sly1actions::CurrentContext());
+	const std::string& world = g_transition.m_worldCurrent;
+	s_scene = "world=" + (world.empty() ? std::string("-") : world) + " ctx=" +
+		(context >= 0 && context < 8 ? s_aszContext[context] : "?");
+	return s_scene.c_str();
 }
