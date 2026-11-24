@@ -46,3 +46,17 @@ inline float HudBoxWidth()
 // The box's left and right edges in output pixels (0 and g_gl.width at Match Screen).
 inline float HudLeft() { return (g_gl.width - HudBoxWidth()) * 0.5f; }
 inline float HudRight() { return HudLeft() + HudBoxWidth(); }
+
+// The binocucom's talk windows (the TV portraits, Bentley left and Sly right): the original puts them at the 4:3
+// picture's edges. On wider pictures they follow the HUD Placement box but never past a centred 16:10 box (wider, the
+// faces would sit far from the text between them): at 4:3 unchanged, at 16:10 out at the edges like the original's
+// 4:3, wider (16:9, 21:9, 32:9) at the 16:10 box's edges. A narrower HUD Placement (4:3) keeps them in its box.
+inline float TvBoxWidth() { return (std::min)(HudBoxWidth(), g_gl.height * (16.0f / 10.0f)); }
+inline float TvBoxLeft() { return (g_gl.width - TvBoxWidth()) * 0.5f; }
+inline float TvBoxRight() { return TvBoxLeft() + TvBoxWidth(); }
+// How far the left talk window (and the talk text beside it) moved out from its place in the 4:3 box.
+inline float TvBoxShift()
+{
+	const float width43 = (std::min)(static_cast<float>(g_gl.width), g_gl.height * (4.0f / 3.0f));
+	return TvBoxLeft() - (g_gl.width - width43) * 0.5f;
+}

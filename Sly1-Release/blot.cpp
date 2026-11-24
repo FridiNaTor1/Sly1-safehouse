@@ -335,6 +335,12 @@ void RepositionBlot(BLOT* pblot)
     // (the HUD Placement box: the whole picture without SafeHouse, safehouse/hudbox.h)
     float left = HudLeft();
     float right = HudRight();
+    if (pblot->blotk == BLOTK_TvLeft || pblot->blotk == BLOTK_TvRight)
+    {
+        // (the binocucom's talk windows: the HUD box, at most 16:10 wide, safehouse/hudbox.h)
+        left = TvBoxLeft();
+        right = TvBoxRight();
+    }
     float bottom = 0.0f;
     float top = g_gl.height;
 

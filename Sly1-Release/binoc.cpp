@@ -6,6 +6,7 @@
 #include "tv.h"
 #include "cplook.h"
 #include "mouse.h"
+#include "safehouse/hudbox.h"
 
 namespace
 {
@@ -2273,7 +2274,10 @@ void DrawBinoc(BINOC* pbinoc)
     const float textHeight = static_cast<float>(pbinoc->pfont->m_dyUnscaled) * pbinoc->pfont->m_ryScale;
     const float boxWidth = UiSize(boxWidthVirtual);
     const float boxHeight = textHeight * static_cast<float>(visibleLineCount);
-    const float clipX = UiX(180.0f + offsetX);
+    // The talk windows reach out toward the edges on wide pictures (safehouse/hudbox.h TvBoxShift): the text and its
+    // pause icon stay beside Bentley's window, as in the original, at the same size and width (same line breaks).
+    const float xTalkShift = state != BINOCS_Confront ? TvBoxShift() : 0.0f;
+    const float clipX = UiX(180.0f + offsetX) + xTalkShift;
     const float clipY = UiY(386.80002f + offsetY);
 
     CTextBox tbxClip;
@@ -2403,7 +2407,7 @@ void DrawBinoc(BINOC* pbinoc)
             pauseYVirtual = offsetY + 472.80002f;
         }
 
-        const float pauseX = UiX(pauseXVirtual);
+        const float pauseX = UiX(pauseXVirtual) + xTalkShift;
         const float pauseY = UiY(pauseYVirtual);
 
         char achzPause[2] = { pbinoc->chPause, '\0' };
