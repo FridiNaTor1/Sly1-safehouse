@@ -14,6 +14,9 @@
 #include <fstream>
 #include <limits>
 #include <stdexcept>
+#ifdef _WIN32
+#include <objbase.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -435,7 +438,12 @@ int ExportWav(const std::vector<std::string>& args)
         seconds = kSecondsMax;
     }
     std::printf("playing %s for %.0f s ...\n", args[1].c_str(), seconds);
-    if (!PlayMusicFileForCapture(cane::path(args[1]), seconds, &samples)) return 1;
+    // (XAudio2 needs COM on the calling thread; in the game something else has set it up by then, here nothing has:
+    // CreateMasteringVoice failed with CO_E_NOTINITIALIZED)
+    const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    const bool played = PlayMusicFileForCapture(cane::path(args[1]), seconds, &samples);
+    if (SUCCEEDED(com)) CoUninitialize();
+    if (!played) return 1;
 #else
     const fs::path raw = fs::path(out).concat(".raw");
     setenv("SDL_AUDIODRIVER", "disk", 1);
