@@ -21,6 +21,7 @@
 #include "safehouse/launcher.h"
 #include "safehouse/mouseinput.h"
 #include "safehouse/remappage.h"
+#include "safehouse/settings.h"
 #include <cstdlib>
 #endif
 #include "safehouse/hudbox.h"
@@ -87,6 +88,7 @@ const char* PcText(const char* english, const char* french, const char* german,
 			{"Disable Controller When Unfocused", "非アクティブ時にコントローラーを無効化"},
 			{"Mouse Camera", "マウスカメラ"}, {"Mouse Sensitivity", "マウス感度"},
 			{"Dialogue Skip Controls", "セリフスキップ操作"}, {"Camera Invert", "カメラ反転"},
+			{"Instant Skip Cutscenes", "ムービーをすぐスキップ"},
 			{"Press a button", "ボタンを押してください"},
 			{"Press a key or mouse button", "キーまたはマウスボタンを押してください"},
 			{"Speakers", "スピーカー"}, {"Stereo", "ステレオ"}, {"Mono", "モノラル"},
@@ -135,6 +137,7 @@ const char* PcText(const char* english, const char* french, const char* german,
 			{"Disable Controller When Unfocused", "비활성화 시 컨트롤러 끄기"},
 			{"Mouse Camera", "마우스 카메라"}, {"Mouse Sensitivity", "마우스 감도"},
 			{"Dialogue Skip Controls", "대화 건너뛰기"}, {"Camera Invert", "카메라 반전"},
+			{"Instant Skip Cutscenes", "동영상 바로 건너뛰기"},
 			{"Press a button", "버튼을 누르세요"},
 			{"Press a key or mouse button", "키 또는 마우스 버튼을 누르세요"},
 			{"Speakers", "스피커"}, {"Stereo", "스테레오"}, {"Mono", "모노"},
@@ -1082,9 +1085,17 @@ void SetPromptPrk(PROMPT* pprompt)
 		PcOnOff(g_fMouseCamera));
 	std::snprintf(g_achzRespk68, sizeof(g_achzRespk68), "%s: %d%%", PcText("Mouse Sensitivity", "Sensibilité de la souris", "Mausempfindlichkeit", "Sensibilidad del ratón", "Sensibilità mouse"),
 		static_cast<int>(std::lround(g_mouseCameraSensitivity * 100.0f)));
+#if defined(CANE_SAFEHOUSE)
+	// (SafeHouse: the row is Instant Skip Cutscenes, as in Sly 2's options: off, a cutscene or a conversation is skipped
+	// by holding Circle 2 seconds; on, by one press (safehouse/skipcut.h). Upstream's Dialogue Skip Controls are gone.)
+	std::snprintf(g_achzRespk67, sizeof(g_achzRespk67), "%s: %s",
+		PcText("Instant Skip Cutscenes", "Saut direct des cinématiques", "Szenen sofort überspringen", "Saltar escenas al instante", "Salto immediato dei filmati"),
+		PcOnOff(ShSettings().system.instantSkipCutscenes != 0));
+#else
 	std::snprintf(g_achzRespk67, sizeof(g_achzRespk67), "%s: %s",
 		PcText("Dialogue Skip Controls", "Commandes pour passer les dialogues", "Dialog-Überspringen", "Controles para omitir diálogos", "Comandi per saltare i dialoghi"),
 		PcOnOff(g_fSkipBinocDialogs));
+#endif
 	std::snprintf(g_achzRespk41, sizeof(g_achzRespk41), "%s: %s",
 		PcText("Camera Invert", "Inversion de la caméra", "Kamera invertieren", "Invertir cámara", "Inverti telecamera"),
 		PcOnOff((g_pgsCur->grfgs & 0x1000U) != 0));
@@ -1938,7 +1949,11 @@ void ExecutePrompt(PROMPT* pprompt, int direction)
                 return;
 
 				case RESPK_CutsceneSkipControls:
+#if defined(CANE_SAFEHOUSE)
+				ShSettingsMutable().system.instantSkipCutscenes = ShSettings().system.instantSkipCutscenes == 0;
+#else
 				g_fSkipBinocDialogs = !g_fSkipBinocDialogs;
+#endif
 				SaveSystemSettings();
 				rebuildPromptKeepingSelection();
 				return;

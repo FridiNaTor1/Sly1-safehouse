@@ -84,7 +84,9 @@ VIDEOSAVESETTINGS ToGame(const st::Sly1Settings& s)
 	v.soundEffectsVolume = y.soundEffectsVolume;
 	v.dialogueVolume = y.dialogueVolume;
 	v.mouseCameraEnabled = y.mouseCamera;
-	v.cutsceneSkipControlsEnabled = s.sly1.dialogueSkip;
+	// (upstream's Dialogue Skip Controls, L1 / R1 through binocucom lines, are off: every conversation takes the
+	// cutscenes' hold-to-skip, skipcut.h; the old Settings.ini key became Instant Skip Cutscenes, sly1_settings.h)
+	v.cutsceneSkipControlsEnabled = 0;
 	v.mouseCameraSensitivity = static_cast<float>(y.mouseSensitivity) / 100.0f;
 	v.autoIconify = s.sly1.autoIconify;
 	v.anisotropicFiltering = y.anisotropy;
@@ -127,7 +129,6 @@ void FromGame(st::Sly1Settings& s, const VIDEOSAVESETTINGS& v, const VIDEOSAVESE
 	if (SH_CHANGED(soundEffectsVolume)) y.soundEffectsVolume = v.soundEffectsVolume;
 	if (SH_CHANGED(dialogueVolume)) y.dialogueVolume = v.dialogueVolume;
 	if (SH_CHANGED(mouseCameraEnabled)) y.mouseCamera = v.mouseCameraEnabled;
-	if (SH_CHANGED(cutsceneSkipControlsEnabled)) s.sly1.dialogueSkip = v.cutsceneSkipControlsEnabled;
 	if (SH_CHANGED(mouseCameraSensitivity))
 		y.mouseSensitivity = std::clamp(static_cast<int>(std::lround(v.mouseCameraSensitivity * 100.0f)), 10, 500);
 	if (SH_CHANGED(autoIconify)) s.sly1.autoIconify = v.autoIconify;
