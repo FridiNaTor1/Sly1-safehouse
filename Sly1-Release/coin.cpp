@@ -224,6 +224,11 @@ void ProjectDprizeTransform(DPRIZE* pdprize, float dt, int fParentDirty)
 			glm::vec3 posTarget;
 			glm::mat3 matTarget;
 
+			// No player (a level door's exit took Sly out of the player list earlier in this frame): the default
+			// PZI has no charm bracelet. The next UpdateDprize drops the prize (DPRIZES_Fall).
+			if (ppzi->mpccharmpaloCharm[0] == nullptr)
+				break;
+
 			// Release uses charm index 0.
 			PredictAloTransform(ppzi->mpccharmpaloCharm[0], nullptr, dtRemaining, &posTarget, &matTarget, nullptr, nullptr);
 
@@ -253,6 +258,10 @@ void ProjectDprizeTransform(DPRIZE* pdprize, float dt, int fParentDirty)
 			glm::vec3 posTarget = s_posTarget;
 
 			ALO* paloCharmGold = ppzi->mpccharmpaloCharm[3];
+			// (no player: as DPRIZES_Stick above)
+			if (paloCharmGold == nullptr || ppzi->paloBag == nullptr)
+				break;
+
 			float radTarget = std::atan2(paloCharmGold->xf.matWorld[0].y, paloCharmGold->xf.matWorld[0].x);
 			radTarget = RadNormalize(radTarget);
 			radTarget += 15.707964f;
@@ -713,10 +722,13 @@ void UpdateDprize(DPRIZE* pdprize, float dt)
 				break;
 			}
 
+			// (no player, so no bracelet to bounce off: the prize just falls)
 			ALO* paloCharmGold = ppzi->mpccharmpaloCharm[3];
-			glm::vec3 vReject = paloCharmGold->xf.mat * s_vReject + paloCharmGold->xf.v;
-
-			pdprize->pvtalo->pfnSetAloVelocityVec(pdprize, &vReject);
+			if (paloCharmGold != nullptr)
+			{
+				glm::vec3 vReject = paloCharmGold->xf.mat * s_vReject + paloCharmGold->xf.v;
+				pdprize->pvtalo->pfnSetAloVelocityVec(pdprize, &vReject);
+			}
 			pdprize->pvtdprize->pfnSetDprizeDprizes(pdprize, DPRIZES_Fall);
 			break;
 		}
