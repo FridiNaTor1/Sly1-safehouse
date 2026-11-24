@@ -192,14 +192,15 @@ CODE s_codes[] =
 };
 
 #if defined(CANE_SAFEHOUSE)
-// The keyboard and mouse layout of SafeHouse's Sly 2 (platform/system_settings.h kSly2DefaultKeyboardBindings, by
-// PS2 button): Square = left mouse, Circle = E, Cross = Space, Triangle = Q, L1 / L2 / R2 = 1 / 2 / 3, R1 = Left
-// Shift, L3 = Tab, R3 = right mouse, Start = Enter (Escape is always a second Start), Select = Backspace.
+// SafeHouse's keyboard and mouse layout for Sly 1, Sly 2's and Sly 3's action for action (platform/system_settings.h
+// kSly1DefaultKeyboardBindings, by PS2 button): Square (attack) = left mouse, Circle (action) = E, Cross (jump) =
+// Space, Triangle (power-up) = Q, L1 (binocucom) = right mouse, R1 = Left Shift, L2 / R2 (power-ups) = 2 / 3, L3 = Tab,
+// R3 (centre the camera) = middle mouse, Start = Enter (Escape is always a second Start), Select = Backspace.
 constexpr std::array<int, BTN_MAX> kDefaultKeyboardBindings = []
 {
     std::array<int, BTN_MAX> keys{};
     for (int i = 0; i < BTN_MAX; ++i)
-        keys[i] = cane::settings::kSly2DefaultKeyboardBindings[i];
+        keys[i] = cane::settings::kSly1DefaultKeyboardBindings[i];
     return keys;
 }();
 static_assert(BTN_MAX == cane::settings::kBindingCount);
