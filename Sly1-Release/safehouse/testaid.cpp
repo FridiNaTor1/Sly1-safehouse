@@ -18,6 +18,10 @@
 //                   meet each other first); watch=crfod logs when each placed rooster is gone
 //   fsp=N           power-up N (FSP: 2 slow motion, 4 fast, ...) given and selected
 //   musictrace      the music sequencer's event trace on (sound.cpp: MusicDiagnostics/ in the installation folder)
+//   mixtrace=1|0    the audio trace on / off (sound.cpp's eerie-audio trace: CameraDiagnostics/ beside the program, a
+//                   line per frame with the reverb, volumes and (Windows) the final mix's peaks; Windows: turning it off
+//                   writes the first 30 s of the final mix since it went on, before / after the output saturator, as
+//                   eerie_audio_before_saturator.wav / eerie_audio_after_saturator.wav)
 //   watch=NAME      a per-frame log line ("watch NAME ...") after each world update: vault, exit, charm, crfod (the
 //                   Down Home Cooking roosters: alive, pairs touching / overlapping, a line a second; crfodnear: each
 //                   frame a pair is near), mts, music (the
@@ -215,6 +219,11 @@ bool ShTestStep(const std::string& action, const std::string& arg)
 	}
 	else if (action == "musictrace")
 		SetMusicDropoutTraceEnabled(true);
+	else if (action == "mixtrace")
+	{
+		SetEerieAudioTraceEnabled(arg != "0");
+		std::printf("test: mix trace %s\n", arg != "0" ? "on" : "off");
+	}
 	else
 		return false;
 	std::fflush(stdout);
