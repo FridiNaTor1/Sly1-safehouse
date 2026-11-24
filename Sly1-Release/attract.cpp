@@ -58,7 +58,7 @@ void UpdateAttractText(ATTRACT* pattract)
     else
     {
         pattract->rgba = glm::vec4(111.0f / 128.0f, 111.0f / 128.0f, 111.0f / 128.0f, 1.0f);
-        if (FLocalizedContent() && localizedPlay != nullptr && localizedMenu != nullptr)
+        if (FLocalizedText() && localizedPlay != nullptr && localizedMenu != nullptr)
         {
             if (localizedLanguage != nullptr && localizedLanguage[0] != '\0')
                 std::snprintf(pattract->achzDraw, sizeof(pattract->achzDraw), "%s\n%s\n%s",

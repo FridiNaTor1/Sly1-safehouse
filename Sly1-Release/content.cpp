@@ -1,4 +1,7 @@
 #include "content.h"
+#if defined(CANE_SAFEHOUSE)
+#include "safehouse/textmod.h"
+#endif
 
 #include "../platform/platform.h"
 
@@ -323,6 +326,15 @@ bool FKoreanContent()
     return s_contentPackage.region == CONTENT_REGION::NtscK;
 }
 
+bool FLocalizedText()
+{
+#if defined(CANE_SAFEHOUSE)
+    if (FTextModsActive())
+        return true;
+#endif
+    return FLocalizedContent();
+}
+
 bool FLocalizedContent()
 {
     if (FJapaneseContent() || FKoreanContent())
@@ -593,6 +605,11 @@ std::shared_ptr<char[]> ContentLocalizedTextAlloc(std::int16_t index)
 
 const char* ContentLocalizedText(std::size_t index)
 {
+#if defined(CANE_SAFEHOUSE)
+    // (a text mod's string wins: safehouse/textmod.h)
+    if (const char* modText = ContentModText(index))
+        return modText;
+#endif
     return index < s_localizedText.size() ? s_localizedText[index].c_str() : nullptr;
 }
 

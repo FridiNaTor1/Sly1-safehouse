@@ -1794,12 +1794,12 @@ void DrawBinocZoom(BINOC* pbinoc)
 
                 tbx.m_x = originX + 215.0f * sx;
                 tbx.m_y = originY + 390.80002f * sy;
-                const char* moveText = FLocalizedContent() ? ContentLocalizedText(79) : nullptr;
+                const char* moveText = FLocalizedText() ? ContentLocalizedText(79) : nullptr;
                 const char* moveFallback = FJapaneseContent() ? "移動" : "Move";
                 labelFont->DrawPchz(const_cast<char*>(moveText != nullptr ? moveText : moveFallback), &tbx);
 
                 tbx.m_x = originX + 425.0f * sx;
-                const char* zoomText = FLocalizedContent() ? ContentLocalizedText(80) : nullptr;
+                const char* zoomText = FLocalizedText() ? ContentLocalizedText(80) : nullptr;
                 const char* zoomFallback = FJapaneseContent() ? "ズーム" : "Zoom";
                 labelFont->DrawPchz(const_cast<char*>(zoomText != nullptr ? zoomText : zoomFallback), &tbx);
 

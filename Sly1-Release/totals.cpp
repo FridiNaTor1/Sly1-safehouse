@@ -125,7 +125,7 @@ void SetTotalsLevelText(TOTALS* ptotals, int worldId, int levelIndex)
 
     const LEVELINFO* levelInfo = PlevelInfoFromId(levelId);
     const char* pchzLevelName = PchzFriendlyFromLevelId(levelId);
-    if (FLocalizedContent() && levelInfo != nullptr)
+    if (FLocalizedText() && levelInfo != nullptr)
     {
         const std::ptrdiff_t levelIndexInTable = levelInfo - g_levelTable;
         const char* localized = levelIndexInTable >= 0 && levelIndexInTable < 46
@@ -154,7 +154,7 @@ void SetTotalsWorldText(TOTALS* ptotals, int worldId)
 
     static constexpr std::size_t s_aiWorldLocalization[] = { 0, 177, 179, 181, 183, 185 };
     const char* worldName = s_apchzWorldNames[worldId];
-    if (FLocalizedContent() && worldId > GAMEWORLD_Intro && worldId < GAMEWORLD_Max)
+    if (FLocalizedText() && worldId > GAMEWORLD_Intro && worldId < GAMEWORLD_Max)
     {
         if (const char* localized = ContentLocalizedText(s_aiWorldLocalization[worldId]))
             worldName = localized;

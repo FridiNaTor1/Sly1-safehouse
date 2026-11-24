@@ -52,7 +52,7 @@ void UpdateHubselUi(HUBSEL* phubsel)
         const GAMEWORLD gameWorld = phubsel->gameWorldSelected;
 
         if (gameWorld == GAMEWORLD_Intro)
-            achzTotals = FLocalizedContent() && ContentLocalizedText(22) != nullptr
+            achzTotals = FLocalizedText() && ContentLocalizedText(22) != nullptr
                 ? ContentLocalizedText(22) : "Bentley";
         else if ((g_pgsCur->aws[gameWorld].fws & FWS_Visited) != 0)
             SetTotalsWorldText(&g_totals, gameWorld);
@@ -62,7 +62,7 @@ void UpdateHubselUi(HUBSEL* phubsel)
             achzTotals = "";
         }
         else
-            achzTotals = FLocalizedContent() && ContentLocalizedText(24) != nullptr
+            achzTotals = FLocalizedText() && ContentLocalizedText(24) != nullptr
                 ? ContentLocalizedText(24) : "Murray";
     }
     else
@@ -77,7 +77,7 @@ void UpdateHubselUi(HUBSEL* phubsel)
 
     if (fShowUnavailableHint)
     {
-        const char* missionText = FLocalizedContent() ? ContentLocalizedText(23) : nullptr;
+        const char* missionText = FLocalizedText() ? ContentLocalizedText(23) : nullptr;
         g_hubblot.pvtblot->pfnSetBlotAchzDraw(&g_hubblot,
             const_cast<char*>(missionText != nullptr ? missionText : "Press &2X&. to Start Mission!"));
         g_hubblot.pvtblot->pfnShowBlot(&g_hubblot);

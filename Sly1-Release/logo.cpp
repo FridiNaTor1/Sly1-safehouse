@@ -37,7 +37,7 @@ void PostLogoLoad(LOGO* plogo)
         // Fallback: set a default draw string if no shader was found
         if (plogo->pvtblot && plogo->pvtblot->pfnSetBlotAchzDraw)
         {
-            const char* logoText = FLocalizedContent() ? ContentLocalizedText(11) : nullptr;
+            const char* logoText = FLocalizedText() ? ContentLocalizedText(11) : nullptr;
             plogo->pvtblot->pfnSetBlotAchzDraw(plogo,
                 const_cast<char*>(logoText != nullptr ? logoText : logoPchz));
         }

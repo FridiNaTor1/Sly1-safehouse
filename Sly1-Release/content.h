@@ -54,6 +54,9 @@ bool FPalVideoStandard();
 bool FJapaneseContent();
 bool FKoreanContent();
 bool FLocalizedContent();
+// The game's text comes from a string table: the disc's (FLocalizedContent) or, in SafeHouse builds, a text mod's
+// (safehouse/textmod.h; also on the USA disc, which has no table: its own English strings stay where a mod has none).
+bool FLocalizedText();
 bool FHasLanguageMenu();
 bool FContentLanguageAvailable(CONTENT_LANGUAGE language);
 void ConfigureContentLanguages(std::uint32_t languageMask, CONTENT_LANGUAGE defaultLanguage);

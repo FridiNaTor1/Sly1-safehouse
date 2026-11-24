@@ -74,7 +74,7 @@ namespace
 
     const char* PchzLocalizedFmvTitle(int index)
     {
-        if (FLocalizedContent() && index >= 0 && index < 16)
+        if (FLocalizedText() && index >= 0 && index < 16)
         {
             if (const char* localized = ContentLocalizedText(173 + static_cast<std::size_t>(index)))
                 return localized;

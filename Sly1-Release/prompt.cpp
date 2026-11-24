@@ -361,7 +361,7 @@ PRD& PrdPrompt(PRK prk)
 
 const char* PchzPromptTitle(PRK prk, const PRD& prd)
 {
-	if (!FLocalizedContent())
+	if (!FLocalizedText())
 		return prd.pchz;
 	if (prk >= PRK_PauseMenu && prk <= PRK_MtsFailedBestTime)
 	{
@@ -642,6 +642,14 @@ void SelectWindowMode(int direction)
 }
 }
 
+#if defined(CANE_SAFEHOUSE)
+// (safehouse/textmod.cpp's USA dump: a response's string number in the PAL table)
+int ShPalResponseStringIndex(RESPK respk, int variant)
+{
+    return PalResponseLocalizationIndex(respk, variant);
+}
+#endif
+
 void StartupPrompt(PROMPT* pprompt)
 {
     g_tePrompt.m_ch = 45;
@@ -710,7 +718,7 @@ void HandlePromptPrkTransition(PROMPT* pprompt, PRK prkOld, PRK prkNew)
         case PRK_MemcardChooseSaveSlot:
         case PRK_MemcardChooseLoadSlot:
         {
-            const char* eraseText = FLocalizedContent() ? ContentLocalizedText(157) : nullptr;
+            const char* eraseText = FLocalizedText() ? ContentLocalizedText(157) : nullptr;
             g_pnote.pvtblot->pfnSetBlotAchzDraw(&g_pnote,
                 const_cast<char*>(eraseText != nullptr ? eraseText : "&2S&.: Erase Game"));
         }
@@ -1198,7 +1206,7 @@ void SetPromptPrk(PROMPT* pprompt)
         {
             for (int variant = 0; variant < responseData.cpchz; ++variant)
             {
-                const char* variantText = FLocalizedContent()
+                const char* variantText = FLocalizedText()
 					? PalResponseText(response, variant) : nullptr;
 				if (variantText == nullptr)
 					variantText = responseData.apchz[variant];
@@ -2167,7 +2175,7 @@ const char* AchzFromRespk(RESPK respk)
 		return PcText("Controls and Button Icons...", "Commandes et icônes...", "Steuerung und Tastensymbole...",
 			"Controles e iconos...", "Comandi e icone...");
 #endif
-	if (FLocalizedContent())
+	if (FLocalizedText())
 	{
 		int variant = 0;
 		switch (respk)
@@ -2227,7 +2235,7 @@ void BuildSaveSlotText(GS* pgs, char* pchzDst)
     const int levelId = (pgs->gameWorldCur << 8) | pgs->worldLevelCur;
     const LEVELINFO* levelInfo = PlevelInfoFromId(levelId);
     const char* pchzLevel = PchzFriendlyFromLevelId(levelId);
-    if (FLocalizedContent() && levelInfo != nullptr)
+    if (FLocalizedText() && levelInfo != nullptr)
     {
         const std::ptrdiff_t levelIndexInTable = levelInfo - g_levelTable;
         const char* localized = levelIndexInTable >= 0 && levelIndexInTable < 46

@@ -399,7 +399,7 @@ void DrawUiSplash(UI* pui)
 
     BLOT* ptitle = (BLOT*)&g_title;
     if ((timeSinceSplash >= 6.0f) && (timeSinceSplash - g_clock.dtReal < 6.0f)) {
-        const char* productionText = FLocalizedContent() ? ContentLocalizedText(10) : nullptr;
+        const char* productionText = FLocalizedText() ? ContentLocalizedText(10) : nullptr;
         ptitle->pvtblot->pfnSetBlotAchzDraw(ptitle,
             const_cast<char*>(productionText != nullptr ? productionText : suckerPunchProd));
         SetBlotDtAppear(ptitle, 1.0f);
@@ -457,7 +457,7 @@ void DrawUiSplash(UI* pui)
             float presentsStartY = (g_gl.height - totalTextHeight) * 0.5f + 22.0f * scaleY;
 
             for (int i = 0; i < 2; ++i) {
-                const char* textLine = FLocalizedContent() ? ContentLocalizedText(8 + i) : nullptr;
+                const char* textLine = FLocalizedText() ? ContentLocalizedText(8 + i) : nullptr;
                 if (textLine == nullptr)
                     textLine = g_aachzPresents[i];
 

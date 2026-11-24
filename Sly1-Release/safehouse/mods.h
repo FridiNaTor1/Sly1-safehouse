@@ -21,6 +21,7 @@ inline std::filesystem::path ModPath(const std::filesystem::path& installed) { r
 //   --mods DIR                     the mods folder
 //   --texture-pack DIR             a texture pack under the mods folder's textures (texmod.h; the PS3 HD pack)
 //   --dump-textures DIR            every texture the game loads written to DIR as a PNG of its mods name
+//   --dump-text DIR                (a tool: no game) every language's strings written to DIR (textmod.h)
 //   --ps3-hd-textures SOURCE OUT   (a tool: no game) the PS3 HD texture pack built from The Sly Collection (ps3hd.cpp);
 //   --ps3-hd-png                   with it: as PNG files instead of Textures.pak
 void TakeModArguments(std::vector<std::string>& args);

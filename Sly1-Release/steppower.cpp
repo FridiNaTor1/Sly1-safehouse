@@ -24,7 +24,7 @@ const char* PowerUpName(FSP fsp)
     };
     if (fsp < FSP_Dive || fsp >= FSP_Max)
         return "";
-    if (FLocalizedContent())
+    if (FLocalizedText())
     {
         if (const char* localized = ContentLocalizedText(162 + static_cast<std::size_t>(fsp)))
             return localized;
