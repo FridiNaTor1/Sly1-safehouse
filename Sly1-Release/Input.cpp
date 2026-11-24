@@ -831,6 +831,8 @@ void JOY::Update(GLFWwindow* window)
     if (cameraRight && !cameraLeft) x2Raw = 1.0f;
     if (cameraUp && !cameraDown) y2Raw = 1.0f;
     if (cameraDown && !cameraUp) y2Raw = -1.0f;
+    if (this == &g_joy)
+        g_yShCameraKeys = cameraUp == cameraDown ? 0.0f : cameraUp ? 1.0f : -1.0f;
 
     ApplyStickDeadZone(xRaw, yRaw, &calibration, &x, &y, &uDeflect);
     ApplyStickDeadZone(x2Raw, y2Raw, &calibration2, &x2, &y2, &uDeflect2);
@@ -1361,6 +1363,7 @@ bool g_fDisableControllerInputWhenUnfocused = false;
 #if defined(CANE_SAFEHOUSE)
 bool g_fMouseCamera = true;   // (as Sly 2: the mouse turns the camera by default)
 bool g_fControllerVibration = true;
+float g_yShCameraKeys = 0.0f;
 #else
 bool g_fMouseCamera = false;
 #endif

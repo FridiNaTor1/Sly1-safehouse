@@ -1,6 +1,7 @@
 #include "cplook.h"
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/mouseinput.h"
+#include "safehouse/pcinput.h"
 #endif
 #include "jt.h"
 #include "cm.h"
@@ -153,7 +154,13 @@ void UpdateCplook(CPLOOK* pcplook, CPDEFI* pcpdefi, JOY* pjoy, float dt)
 	{
 		case LOOKK_User:
 		{
-			const float zoomRate = (s_clqUZoomToRsvu.g0 + pcplook->uZoom * (s_clqUZoomToRsvu.g1 + pcplook->uZoom * s_clqUZoomToRsvu.g2)) * pjoy->y2 * std::abs(pjoy->y2);
+#if defined(CANE_SAFEHOUSE)
+			// (the keyboard's camera keys look up / down in the binocucom instead of zooming: below)
+			const float yZoom = pjoy == &g_joy && g_yShCameraKeys != 0.0f ? 0.0f : pjoy->y2;
+#else
+			const float yZoom = pjoy->y2;
+#endif
+			const float zoomRate = (s_clqUZoomToRsvu.g0 + pcplook->uZoom * (s_clqUZoomToRsvu.g1 + pcplook->uZoom * s_clqUZoomToRsvu.g2)) * yZoom * std::abs(yZoom);
 			pcplook->svuZoom = zoomRate;
 			pcplook->uZoom = glm::clamp(pcplook->uZoom + zoomRate * dt, 0.0f, 1.0f);
 #if defined(CANE_SAFEHOUSE)
@@ -395,7 +402,12 @@ void UpdateCplook(CPLOOK* pcplook, CPDEFI* pcpdefi, JOY* pjoy, float dt)
 	if (lookk == LOOKK_User || lookk == LOOKK_Sniper)
 	{
 		float inputPan = GLimitAbs(pjoy->x + pjoy->x2, 1.0f);
+#if defined(CANE_SAFEHOUSE)
+		// The keyboard's camera keys (the arrows) move Sly's view all four ways, as their left / right already pan.
+		float inputTilt = GLimitAbs(pjoy->y + (pjoy == &g_joy && lookk == LOOKK_User ? g_yShCameraKeys : 0.0f), 1.0f);
+#else
 		float inputTilt = GLimitAbs(pjoy->y, 1.0f);
+#endif
 		const bool fInputGated = g_pjt != nullptr && PpoCur() == g_pjt && g_pjt->jtbs != JTBS_Peek_Peek;
 		if (fInputGated)
 		{

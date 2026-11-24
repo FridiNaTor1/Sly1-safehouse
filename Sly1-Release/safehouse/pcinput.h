@@ -23,6 +23,11 @@ extern bool g_fAutoCameraRotation;
 // applies when on). Defined in Input.cpp.
 extern bool g_fControllerVibration;
 
+// The keyboard camera keys' up / down this input update (1 up, -1 down, 0 neither or a menu has them), set by
+// JOY::Update beside the right stick they drive: in the binocucom they look up / down as the arrows' left / right look
+// around (cplook.cpp), instead of zooming. Defined in Input.cpp.
+extern float g_yShCameraKeys;
+
 // These options from / to the shared settings record (Settings.ini: safehouse/settings.h). The 16 bindings, the mouse
 // camera and its sensitivity, the dead zone and the unfocused pad go through upstream's VIDEOSAVESETTINGS.
 void PcInputFromSettings(const cane::settings::SystemSettings& settings);
