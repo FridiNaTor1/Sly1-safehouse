@@ -33,6 +33,7 @@
 #include "../wipe.h"
 #include "../xform.h"
 #include "../zap.h"
+#include <safehouse/debug_freeze.h>
 #include <safehouse/debug_menu.h>
 #include "sly1_version.h"
 
@@ -55,7 +56,7 @@ using cane::debugmenu::Item;
 using cane::debugmenu::Page;
 using cane::debugmenu::strOnOff;
 
-enum PAGEK { PK_Root, PK_Worlds, PK_Levels, PK_Teleport, PK_Level, PK_Player, PK_Unlock, PK_Speed, PK_Display, PK_Overlays };
+enum PAGEK { PK_Root, PK_Worlds, PK_Levels, PK_Teleport, PK_Level, PK_Player, PK_Unlock, PK_Speed, PK_Display, PK_FreeCam, PK_Overlays };
 
 // the buttons as bits (JOY_BUTTON order)
 constexpr uint32_t Bit(JOY_BUTTON b) { return 1u << b; }
@@ -81,6 +82,18 @@ bool s_fFreeCam = false;
 bool s_fFreeCamMouse = false;
 bool s_fNoclipWant = false;
 float s_rSpeed = 1.0f;
+// the Free Camera page's freeze camera and the time keys (<safehouse/debug_freeze.h>): the frozen view drives the
+// camera through the free camera's policy (the manual one at the top priority), so the visibility and the sound are
+// the frozen view's
+using cane::debugmenu::Freeze;
+Freeze s_freeze = Freeze::Off;
+bool s_fFreezeHave = false;    // (the frozen view taken: the camera's at the first frame after it was chosen)
+glm::vec3 s_posFrozen(0.0f);
+glm::mat3 s_matFrozen(1.0f);
+cane::debugmenu::FollowAim s_aimFollow;
+bool s_fTimeFrozen = false;
+cane::debugmenu::Note s_note;  // (the short note after a key)
+float s_stickX = 0, s_stickY = 0;   // (test aid: stick=X/Y, the left stick held)
 SO* s_psoNoclip = nullptr;
 int s_ilevelNoclip = -1;
 int s_ilevel = 0;                   // (counts the level changes: the noclip's objects belong to one level)
@@ -402,6 +415,9 @@ void SetFreeCam(bool fOn)
 {
 	if (fOn == s_fFreeCam) return;
 	s_fFreeCam = fOn;
+	// (the free camera starts from the view shown: a frozen view too, which it replaces)
+	if (fOn && s_freeze != Freeze::Off) s_freeze = Freeze::Off;
+	s_note.show(std::string("Free Camera: ") + strOnOff(fOn));
 	if (g_pcm == nullptr) return;
 	if (fOn)
 	{
@@ -425,11 +441,68 @@ void SetFreeCam(bool fOn)
 	std::fflush(stdout);
 }
 
+// The camera's view direction as yaw / pitch (<safehouse/debug_freeze.h>: yaw 0 along +x, degrees) and back
+void YawPitchFromMat(const glm::mat3& mat, float* pyaw, float* ppitch)
+{
+	const glm::vec3 forward = -ConvertGameCameraBasisToGl(mat)[2];
+	*pyaw = glm::degrees(std::atan2(forward.y, forward.x));
+	*ppitch = glm::degrees(std::asin(glm::clamp(forward.z, -1.0f, 1.0f)));
+}
+
+glm::mat3 MatFromYawPitch(float yawDeg, float pitchDeg)
+{
+	const float yaw = glm::radians(yawDeg), pitch = glm::radians(pitchDeg);
+	const glm::vec3 forward(std::cos(yaw) * std::cos(pitch), std::sin(yaw) * std::cos(pitch), std::sin(pitch));
+	const glm::vec3 right = glm::normalize(glm::vec3(forward.y, -forward.x, 0.0f));
+	glm::mat3 glBasis(1.0f);
+	glBasis[0] = right;
+	glBasis[1] = glm::normalize(glm::cross(right, forward));
+	glBasis[2] = -forward;
+	return ConvertGlCameraBasisToGame(glBasis);
+}
+
+void SetFreeze(Freeze freeze)
+{
+	// (from Off: the view now shown is the one kept, ShUpdateDebugInput before the next update; Fixed <-> Follow keep
+	// the place taken)
+	if (s_freeze == Freeze::Off || freeze == Freeze::Off) s_fFreezeHave = false;
+	s_freeze = freeze;
+	if (freeze == Freeze::Off && !s_fFreeCam && FFreeCamPolicy())
+	{
+		RevokeCmPolicy(g_pcm, static_cast<GRFRCP>(3), CPP_ManualOverride, &g_pcm->cpman, nullptr, nullptr);
+		CutCm(g_pcm);
+	}
+	s_note.show(std::string("Freeze Camera: ") + cane::debugmenu::freezeName(freeze));
+}
+
+// The game's camera is its own (a cutscene's animated camera, the binocucom's or a conversation's look, a turret):
+// the frozen view waits
+bool FFreezeWaits()
+{
+	if (g_pcm == nullptr || FShCutsceneActive()) return true;
+	for (int i = 0; i < g_pcm->ccpr; ++i)
+		if (g_pcm->acpr[i].cpp == CPP_LookAround || g_pcm->acpr[i].cpp == CPP_Animated) return true;
+	return false;
+}
+
+void SetTimeFrozen(bool fFrozen)
+{
+	if (fFrozen && (g_transition.m_fPending || g_wipe.wipes != WIPES_Idle)) return;
+	s_fTimeFrozen = fFrozen;
+	s_note.show(fFrozen ? "Time frozen" : "Time: " + cane::debugmenu::strSpeed(s_rSpeed));
+}
+
+void SetSpeed(float r)
+{
+	s_rSpeed = r;
+	s_fTimeFrozen = false;
+	s_note.show("Speed " + cane::debugmenu::strSpeed(r));
+}
+
 bool FKey(int key) { return g_gl.window != nullptr && glfwGetKey(g_gl.window, key) == GLFW_PRESS; }
 bool FKeyPressed(int key) { return FKey(key) && !s_afKeyPrev[key]; }
 
 // ------------------------------------------------------------ the pages
-const float s_arSpeed[] = { 0.1f, 0.25f, 0.5f, 1.0f, 1.5f, 2.0f };
 
 std::vector<Item> AitemPage(const Page& page, std::string* pstrTitle)
 {
@@ -461,9 +534,9 @@ std::vector<Item> AitemPage(const Page& page, std::string* pstrTitle)
 		item("Level...", [] { Push(PK_Level); }, LevelIdCur() >= 0 ? PchzFriendlyFromLevelId(LevelIdCur()) : "");
 		item("Player...", [] { Push(PK_Player); });
 		item("Unlock...", [] { Push(PK_Unlock); });
-		char ach[16];
-		std::snprintf(ach, sizeof ach, "%gx", s_rSpeed);
-		item("Speed...", [] { Push(PK_Speed); }, ach);
+		item("Speed...", [] { Push(PK_Speed); }, s_fTimeFrozen ? std::string("Frozen") : cane::debugmenu::strSpeed(s_rSpeed));
+		item("Free Camera...", [] { Push(PK_FreeCam); },
+		     s_fFreeCam ? std::string("Free Camera") : s_freeze != Freeze::Off ? std::string("Freeze: ") + cane::debugmenu::freezeName(s_freeze) : std::string("Off"));
 		item("Display...", [] { Push(PK_Display); });
 		int c = int(s_fLabels) + int(g_fRenderCollision) + int(g_fRenderDialogTriggers) + int(s_fPerf);
 		item("Overlays...", [] { Push(PK_Overlays); }, c ? std::to_string(c) + " on" : std::string("Off"));
@@ -574,26 +647,25 @@ std::vector<Item> AitemPage(const Page& page, std::string* pstrTitle)
 		break;
 	case PK_Speed:
 		*pstrTitle = "Speed (game time scale)";
-		for (float r : s_arSpeed)
+		item(std::string("Freeze Time (") + cane::debugmenu::kKeyFreezeTime + ")", [] {
+			SetTimeFrozen(!s_fTimeFrozen);
+			if (s_fTimeFrozen) Close();
+		}, strOnOff(s_fTimeFrozen));
+		for (float r : cane::debugmenu::kSpeedStops)
 		{
-			char ach[16];
-			std::snprintf(ach, sizeof ach, "%gx", r);
-			item(ach, [r, str = std::string(ach)] {
-				s_rSpeed = r;
+			const std::string str = cane::debugmenu::strSpeed(r);
+			item(str, [r, str] {
+				SetSpeed(r);
 				Status("speed " + str);
 				s_menu.apage.pop_back();
-			}, r == s_rSpeed ? "(current)" : "");
+			}, r == s_rSpeed ? "(current)" : r == 1.0f ? "(normal)" : "");
 		}
+		dim(std::string("Keys: ") + cane::debugmenu::kKeyFaster + " faster, " + cane::debugmenu::kKeySlower + " slower");
 		break;
 	case PK_Display:
 		*pstrTitle = "Display";
 		item("Hide HUD (F11)", [] { s_fHudHidden = !s_fHudHidden; }, strOnOff(s_fHudHidden));
 		item("Perf Display (FPS, Position)", [] { s_fPerf = !s_fPerf; }, strOnOff(s_fPerf));
-		item("Free Camera (F1)", [] {
-			const bool fOn = !s_fFreeCam;
-			Close();
-			SetFreeCam(fOn);
-		}, strOnOff(s_fFreeCam) + "  (W A S D, Q E, right mouse; pad: sticks, R2 / L2, Select)");
 		item("Developer Window (F3)", [] {
 			Close();
 			g_fDebugGuiOpen = !g_fDebugGuiOpen;
@@ -602,6 +674,26 @@ std::vector<Item> AitemPage(const Page& page, std::string* pstrTitle)
 			FrameBufferSizeCallBack(g_gl.window, w, h);
 		}, strOnOff(g_fDebugGuiOpen));
 		break;
+	case PK_FreeCam:
+	{
+		*pstrTitle = "Free Camera";
+		item(std::string("Free Camera (") + cane::debugmenu::kKeyFreeCam + ")", [] {
+			const bool fOn = !s_fFreeCam;
+			Close();
+			SetFreeCam(fOn);
+		}, strOnOff(s_fFreeCam) + "  (W A S D, Q E, right mouse; pad: sticks, R2 / L2, Select)");
+		// (Select steps through the modes, Left / Right too; choosing one closes the menu: the player plays on)
+		Item* pit = item(std::string("Freeze Camera (") + cane::debugmenu::kKeyFreezeCam + ")", [] {
+			SetFreeze(cane::debugmenu::freezeNext(s_freeze));
+			if (s_freeze != Freeze::Off) Close();
+		}, std::string("<  ") + cane::debugmenu::freezeName(s_freeze) + "  >");
+		pit->pfnAdjust = [](int dir) {
+			SetFreeze(dir > 0 ? cane::debugmenu::freezeNext(s_freeze) : cane::debugmenu::freezeNext(cane::debugmenu::freezeNext(s_freeze)));
+		};
+		dim("  Fixed: the view stays. Follow: it turns to the player");
+		dim("  You keep the controls; cutscenes use their own camera");
+		break;
+	}
 	case PK_Overlays:
 		*pstrTitle = "Overlays (shown over the game)";
 		item("Collision", [] { g_fRenderCollision = !g_fRenderCollision; }, strOnOff(g_fRenderCollision));
@@ -678,12 +770,17 @@ void RunScript()
 		else if (a == "infinite") SetInfinite(!s_fInfinite);
 		else if (a == "warp") Warp(int(std::strtol(st.arg.c_str(), nullptr, 16)));
 		else if (a == "speed") s_rSpeed = float(std::atof(st.arg.c_str()));
+		else if (a == "freeze") SetFreeze(st.arg == "follow" ? Freeze::Follow : st.arg == "fixed" ? Freeze::Fixed : Freeze::Off);
+		else if (a == "freezetime") SetTimeFrozen(!s_fTimeFrozen);
+		else if (a == "faster") SetSpeed(cane::debugmenu::speedFaster(s_rSpeed));
+		else if (a == "slower") SetSpeed(cane::debugmenu::speedSlower(s_rSpeed));
+		else if (a == "stick") std::sscanf(st.arg.c_str(), "%f/%f", &s_stickX, &s_stickY);
 		else if (a == "fly") std::sscanf(st.arg.c_str(), "%f/%f/%f", &s_flyX, &s_flyY, &s_flyZ);
 		else if (a == "look") std::sscanf(st.arg.c_str(), "%f/%f", &s_lookYaw, &s_lookPitch);
 		else if (a == "page" && FCanOpen())
 		{
 			static const std::pair<const char*, PAGEK> s_apage[] = { { "Warps", PK_Worlds }, { "Unlock", PK_Unlock }, { "Player", PK_Player },
-				{ "Overlays", PK_Overlays }, { "Display", PK_Display }, { "Teleport", PK_Teleport }, { "Speed", PK_Speed }, { "Level", PK_Level } };
+				{ "Overlays", PK_Overlays }, { "Display", PK_Display }, { "Teleport", PK_Teleport }, { "Speed", PK_Speed }, { "Level", PK_Level }, { "FreeCam", PK_FreeCam } };
 			if (!s_menu.fOpen) Open();
 			for (const auto& p : s_apage)
 				if (st.arg == p.first) Push(p.second, 0);
@@ -877,6 +974,33 @@ void DrawMenu()
 	DrawStr(hint, xText, yHint, scaleHint, rgbaHint);
 	if (fStatus) DrawStr(StrPlain(s_menu.strStatus), xText, yStatus, scaleHint, rgbaValue);
 }
+
+// the key's short note (top centre, about a second) and, while the time is not normal, a small corner note (not with
+// the HUD hidden: clean shots)
+void DrawTimeCamNotes()
+{
+	if (s_note.shown() && !s_menu.fOpen)
+	{
+		const float scale = g_gl.uiScale * 0.42f, a = s_note.alpha();
+		const std::string s = StrPlain(s_note.text);
+		const float w = DxText(s, scale), dy = DyText(scale);
+		const float x = (g_gl.width - w) * 0.5f, y = 90.0f * g_gl.uiScale;
+		Plate(x - 10.0f * g_gl.uiScale, y - 4.0f * g_gl.uiScale, x + w + 10.0f * g_gl.uiScale, y + dy + 4.0f * g_gl.uiScale,
+		      glm::vec4(0.0f, 0.0f, 0.0f, 0.55f * a));
+		DrawStr(s, x, y, scale, glm::vec4(1.0f, 1.0f, 1.0f, a));
+	}
+	const std::string strTime = s_fHudHidden ? std::string() : cane::debugmenu::strTimeIndicator(s_rSpeed, s_fTimeFrozen);
+	if (!strTime.empty())
+	{
+		const float scale = g_gl.uiScale * 0.34f;
+		const std::string s = StrPlain(strTime);
+		const float w = DxText(s, scale), dy = DyText(scale);
+		const float x = 14.0f * g_gl.uiScale, y = g_gl.height - 40.0f * g_gl.uiScale - dy;
+		Plate(x - 6.0f * g_gl.uiScale, y - 3.0f * g_gl.uiScale, x + w + 6.0f * g_gl.uiScale, y + dy + 3.0f * g_gl.uiScale,
+		      glm::vec4(0.0f, 0.0f, 0.0f, 0.5f));
+		DrawStr(s, x, y, scale, glm::vec4(1.0f, 0.92f, 0.6f, 1.0f));
+	}
+}
 }  // namespace
 
 // ------------------------------------------------------------ the hooks
@@ -887,6 +1011,11 @@ void ShDebugLevelChanged()
 	s_fNoclipWant = false;
 	s_fFreeCam = false;   // (the new level's camera has its own policies)
 	s_fFreeCamMouse = false;
+	if (s_freeze != Freeze::Off) s_note.show("Freeze Camera: Off (new level)");
+	s_freeze = Freeze::Off;
+	s_fFreezeHave = false;
+	if (s_fTimeFrozen) s_note.show("Time: " + cane::debugmenu::strSpeed(s_rSpeed) + " (new level)");
+	s_fTimeFrozen = false;
 }
 
 void ShUpdateDebugInput()
@@ -911,6 +1040,8 @@ void ShUpdateDebugInput()
 	{
 		if (s_menu.fOpen) Close();
 		if (s_fFreeCam) SetFreeCam(false);
+		if (s_freeze != Freeze::Off) SetFreeze(Freeze::Off);
+		s_fTimeFrozen = false;
 	}
 	bool fTake = false;
 	if (FDebug())
@@ -933,7 +1064,19 @@ void ShUpdateDebugInput()
 		if (!s_menu.fOpen && g_psw != nullptr)
 		{
 			const bool fIdle = !g_transition.m_fPending && g_wipe.wipes == WIPES_Idle;
-			if (FKeyPressed(GLFW_KEY_F1)) SetFreeCam(!s_fFreeCam);
+			// F1 / Shift+F1 / F8 / Shift+F8 / Ctrl+F8 (<safehouse/debug_freeze.h>)
+			using cane::debugmenu::TimeCamKey;
+			switch (cane::debugmenu::timeCamKey(FKeyPressed(GLFW_KEY_F1), FKeyPressed(GLFW_KEY_F8),
+			                                    FKey(GLFW_KEY_LEFT_SHIFT) || FKey(GLFW_KEY_RIGHT_SHIFT),
+			                                    FKey(GLFW_KEY_LEFT_CONTROL) || FKey(GLFW_KEY_RIGHT_CONTROL)))
+			{
+			case TimeCamKey::FreeCam: SetFreeCam(!s_fFreeCam); break;
+			case TimeCamKey::FreezeCam: SetFreeze(cane::debugmenu::freezeNext(s_freeze)); break;
+			case TimeCamKey::FreezeTime: SetTimeFrozen(!s_fTimeFrozen); break;
+			case TimeCamKey::Faster: SetSpeed(cane::debugmenu::speedFaster(s_rSpeed)); break;
+			case TimeCamKey::Slower: SetSpeed(cane::debugmenu::speedSlower(s_rSpeed)); break;
+			case TimeCamKey::None: break;
+			}
 			if (FKeyPressed(GLFW_KEY_F2) && fIdle) Warp(0x004);
 			if (FKeyPressed(GLFW_KEY_F4) && fIdle) WarpNext();
 			if (FKeyPressed(GLFW_KEY_F5)) SaveNow();
@@ -1007,10 +1150,42 @@ void ShUpdateDebugInput()
 		}
 	}
 	s_menu.tick(s_dtReal);
+	s_note.tick(s_dtReal);
 
-	// the game's input: none while the menu or the free camera has it; after closing, the buttons still held only once
-	// released
-	if (s_fFreeCam) fTake = true;
+	// the freeze camera: the view shown now kept (the free camera's or the game's: the free camera hands the controls
+	// back but its policy stays, now holding the frozen view); the policy set while the game's camera is its own
+	// gameplay one, taken away while a cutscene, the binocucom or a look has the camera (FShDebugFreeCam)
+	if (s_freeze != Freeze::Off && g_pcm != nullptr && g_psw != nullptr)
+	{
+		if (!s_fFreezeHave)
+		{
+			s_posFrozen = g_pcm->pos;
+			s_matFrozen = g_pcm->mat;
+			float yaw = 0, pitch = 0;
+			YawPitchFromMat(s_matFrozen, &yaw, &pitch);
+			s_aimFollow.reset(yaw, pitch);
+			s_fFreezeHave = true;
+			if (s_fFreeCam)
+			{
+				s_fFreeCam = false;
+				if (s_fFreeCamMouse && g_gl.window != nullptr) glfwSetInputMode(g_gl.window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+				s_fFreeCamMouse = false;
+			}
+			std::printf("debug menu: freeze camera %s at %.0f %.0f %.0f yaw %.1f pitch %.1f\n", cane::debugmenu::freezeName(s_freeze),
+			            s_posFrozen.x, s_posFrozen.y, s_posFrozen.z, yaw, pitch);
+		}
+		if (!FFreezeWaits() && !FFreeCamPolicy()) SetCmPolicy(g_pcm, CPP_ManualOverride, &g_pcm->cpman, nullptr, nullptr);
+	}
+	// (test aid: stick=X/Y holds the left stick, as the pad's)
+	if ((s_stickX != 0 || s_stickY != 0) && !s_menu.fOpen && !s_fFreeCam && !s_fTimeFrozen)
+	{
+		g_joy.x = s_stickX, g_joy.y = s_stickY;
+		g_joy.uDeflect = std::min(1.0f, std::sqrt(s_stickX * s_stickX + s_stickY * s_stickY));
+	}
+
+	// the game's input: none while the menu or the free camera has it, or the time is frozen; after closing, the
+	// buttons still held only once released
+	if (s_fFreeCam || s_fTimeFrozen) fTake = true;
 	const uint32_t grfGame = fTake ? 0u : s_menu.gate(grf);
 	if (fTake || grfGame != grf)
 	{
@@ -1023,10 +1198,11 @@ void ShUpdateDebugInput()
 		}
 	}
 	// the game's clock: still while the menu is open (the game's own pause path), else the chosen speed
-	g_rtClockDebug = s_menu.fOpen ? 0.0f : (FDebug() || !Script().empty() ? s_rSpeed : 1.0f);
+	// (Freeze Time: the same still clock)
+	g_rtClockDebug = s_menu.fOpen || s_fTimeFrozen ? 0.0f : (FDebug() || !Script().empty() ? s_rSpeed : 1.0f);
 }
 
-bool FShDebugHasInput() { return s_menu.fOpen || s_fFreeCam; }
+bool FShDebugHasInput() { return s_menu.fOpen || s_fFreeCam || s_fTimeFrozen; }
 
 void ShUpdateDebugTools()
 {
@@ -1046,6 +1222,17 @@ void ShUpdateDebugTools()
 		EndNoclip(s_ilevelNoclip != s_ilevel);
 	if (fOn && s_fNoclipWant && s_psoNoclip == nullptr && !g_transition.m_fPending) BeginNoclip();
 	if (s_psoNoclip != nullptr && !s_menu.fOpen) StepNoclip();
+	// (test aid: SAFEHOUSE_DEBUGTIMEPRINT=N prints the game clock every N frames of the main loop)
+	if (static const int s_cTimePrint = std::getenv("SAFEHOUSE_DEBUGTIMEPRINT") ? std::atoi(std::getenv("SAFEHOUSE_DEBUGTIMEPRINT")) : 0;
+	    s_cTimePrint > 0 && s_cframeLoop % s_cTimePrint == 0)
+	{
+		const PO* ppo = PpoPlayer();
+		std::printf("debug clock: frame %ld t %.4f speed %g frozen %d cam %.1f %.1f %.1f fwd %.3f %.3f %.3f player %.1f %.1f %.1f\n", s_cframeLoop,
+		            g_clock.t, s_rSpeed, int(s_fTimeFrozen), g_pcm ? g_pcm->pos.x : 0.0f, g_pcm ? g_pcm->pos.y : 0.0f, g_pcm ? g_pcm->pos.z : 0.0f,
+		            g_pcm ? g_pcm->mat[0].x : 0.0f, g_pcm ? g_pcm->mat[0].y : 0.0f, g_pcm ? g_pcm->mat[0].z : 0.0f,
+		            ppo ? ppo->xf.posWorld.x : 0.0f, ppo ? ppo->xf.posWorld.y : 0.0f, ppo ? ppo->xf.posWorld.z : 0.0f);
+		std::fflush(stdout);
+	}
 }
 
 void ShDrawDebug()
@@ -1054,6 +1241,7 @@ void ShDrawDebug()
 	if (!(FDebug() || !Script().empty())) return;
 	if (s_fLabels) DrawLabels();
 	if (s_fPerf) DrawPerf();
+	DrawTimeCamNotes();
 	if (s_menu.fOpen) DrawMenu();
 }
 
@@ -1065,7 +1253,32 @@ bool FShDebugSkipUpdate(const ALO* palo)
 bool FShDebugFreeCam(CM* pcm, float dt)
 {
 	(void)dt;
-	if (!s_fFreeCam || pcm != g_pcm) return false;
+	if (pcm != g_pcm) return false;
+	if (!s_fFreeCam && s_freeze != Freeze::Off && s_fFreezeHave && pcm->ccpr > 0 && pcm->acpr[0].cpp == CPP_ManualOverride)
+	{
+		if (FFreezeWaits())
+		{
+			// a cutscene, the binocucom or a look took the camera: the frozen view steps aside (UpdateCmLast goes on with
+			// the policy now on top, this same frame) and comes back after it (ShUpdateDebugInput)
+			RevokeCmPolicy(pcm, static_cast<GRFRCP>(3), CPP_ManualOverride, &pcm->cpman, nullptr, nullptr);
+			CutCm(pcm);
+			return true;
+		}
+		if (s_freeze == Freeze::Follow)
+		{
+			if (const PO* ppo = PpoPlayer())
+			{
+				const glm::vec3 p = ppo->xf.posWorld + glm::vec3(0.0f, 0.0f, 50.0f);   // (about the player's middle)
+				s_aimFollow.step(s_posFrozen.x, s_posFrozen.y, s_posFrozen.z, p.x, p.y, p.z, s_dtReal);
+			}
+			s_matFrozen = MatFromYawPitch(s_aimFollow.yaw, s_aimFollow.pitch);
+		}
+		pcm->pos = s_posFrozen;
+		pcm->mat = s_matFrozen;
+		UpdateCmMat4(pcm);
+		return true;
+	}
+	if (!s_fFreeCam) return false;
 	const float dtReal = s_dtReal;
 	GLFWwindow* w = g_gl.window;
 	// the look: the right stick (the pad), the right mouse button held (the mouse captured meanwhile)

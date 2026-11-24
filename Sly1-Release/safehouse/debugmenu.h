@@ -10,13 +10,15 @@
 // Backspace, E, Q, right click) go back. Rows that change the save are marked "[save]".
 //
 // The debug keys (Debug mode, the menu closed): F1 free camera, F2 the Hideout, F4 the next level, F5 save, F6 unlock
-// everything, F7 infinite health, F9 finish the level, F10 the menu, F11 hide the HUD. (F3 stays the developer
-// window, debug.cpp.)
+// everything, F7 infinite health, F9 finish the level, F10 the menu, F11 hide the HUD; Shift+F1 the freeze camera
+// (Off / Fixed / Follow), F8 freeze time, Shift+F8 faster, Ctrl+F8 slower (<safehouse/debug_freeze.h>, the same in
+// Sly 2 and Sly 3). (F3 stays the developer window, debug.cpp.)
 //
 // Test aid: SAFEHOUSE_DEBUGMENU="ACTION@FRAME,..." runs menu actions at those frames (of the main loop), without Debug mode
 // too: open, close, noclip, freecam, hud, perf, labels, collision, triggers, warp=LEVELID (hex, 0x101), page=NAME
 // (the menu open on Warps, Unlock, Player, Overlays, Display, Teleport, Speed, Level), fly=X/Y/Z (noclip: the stick
-// and up / down held, -1..1), look=YAW/PITCH (free camera: degrees per second), speed=R; and testaid.cpp's steps
+// and up / down held, -1..1), look=YAW/PITCH (free camera: degrees per second), speed=R, freeze=fixed|follow|off,
+// freezetime, faster, slower, stick=X/Y (the left stick held, -1..1); and testaid.cpp's steps
 // (tp, tpoid, chk, clues, objs, charm, watch).
 
 class SO;
@@ -37,7 +39,8 @@ void ShDebugLevelChanged();
 
 // update.cpp / alo.cpp: the noclip's player is placed by the menu, its own update (the pad, the state code) skipped.
 bool FShDebugSkipUpdate(const ALO* palo);
-// cpman.cpp UpdateCpman: the free camera (F1) drives the manual camera policy; true when it did.
+// cpman.cpp UpdateCpman: the free camera (F1) or the freeze camera's view (Shift+F1) drives the manual camera
+// policy; true when it did.
 bool FShDebugFreeCam(CM* pcm, float dt);
 // blot.cpp DrawBlots: F11 hides this HUD element (the counters, timers and icons; the menus stay).
 bool FShDebugHideBlot(int blotk);
