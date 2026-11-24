@@ -1047,7 +1047,14 @@ void SetPromptPrk(PROMPT* pprompt)
 		g_resolutionScalePercent);
 	std::snprintf(g_achzRespk76, sizeof(g_achzRespk76), "%s: %d%%", PcText("Controller Deadzone", "Zone morte de la manette", "Controller-Totzone", "Zona muerta del mando", "Zona morta controller"),
 		static_cast<int>(std::lround(g_controllerDeadzone * 100.0f)));
-	const std::string audioDeviceName = GetAudioOutputDeviceName();
+	std::string audioDeviceName = GetAudioOutputDeviceName();
+	// (a long device name shortened so the row stays inside the menu; the whole name is what is stored)
+	if (audioDeviceName.size() > 32)
+	{
+		size_t cut = 29;
+		while (cut > 0 && (static_cast<unsigned char>(audioDeviceName[cut]) & 0xC0) == 0x80) --cut;
+		audioDeviceName = audioDeviceName.substr(0, cut) + "...";
+	}
 	const char* audioDeviceDisplay = audioDeviceName == "System Default"
 		? PcText("System Default", "Valeur système", "Systemstandard", "Predeterminado del sistema", "Predefinito di sistema")
 		: audioDeviceName.c_str();

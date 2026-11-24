@@ -499,7 +499,8 @@ inline const char* const s_apchzRespk26[2] =
 
 inline RESPK s_arespkSoundMenu[] =
 {
-	#ifdef _WIN32
+	// (the output device: on desktops; Android, iOS and the Switch play on the system's own output)
+	#if !defined(__ANDROID__) && !defined(CANE_IOS) && !defined(__SWITCH__)
 	RESPK_AudioOutputDevice,
 	#endif
 	RESPK_Speakers, RESPK_MusicVolume, RESPK_SfxVolume,

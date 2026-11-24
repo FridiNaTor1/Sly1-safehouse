@@ -83,7 +83,14 @@ static bool s_vagStartWhenReady = false;
 static float s_userMusicVolume = 1.0f;
 static float s_userSfxVolume = 1.0f;
 static float s_userDialogueVolume = 1.0f;
-static std::string s_audioOutputDeviceId;
+// The output device (the Audio page's Audio Output row; SafeHouse's Settings.ini [Audio] Output Device, the same key as
+// Sly 2's): stored by name, as the system lists it ("" the system default). A chosen device that is missing (unplugged)
+// plays on the default and is taken again when it is back (ServiceAudioDevice polls the list every 2 seconds).
+static std::string s_audioOutputDeviceWanted;   // the setting
+static std::string s_audioOutputDeviceOpen;     // the device the engine opened ("" the default)
+#ifdef _WIN32
+static std::wstring s_audioDefaultEndpointOpen; // (Windows: the default endpoint when the engine opened on the default)
+#endif
 static std::ofstream s_musicDropoutTrace;
 static bool s_musicDropoutTraceEnabled = false;
 static bool s_musicTraceHadVoices = false;
@@ -136,7 +143,7 @@ static void TraceMusicEvent(const char* event, int value0 = -1, int value1 = -1)
 
 struct AudioOutputDevice
 {
-	std::string id;
+	std::string id;     // (Windows: the endpoint's id; elsewhere FAudio's device index as text)
 	std::string name;
 };
 
@@ -160,11 +167,59 @@ static std::wstring WideFromUtf8(const std::string& text)
 	if (!result.empty() && result.back() == L'\0') result.pop_back();
 	return result;
 }
+
+// The default render endpoint's id ("" none): the system default the engine follows.
+static std::wstring DefaultAudioEndpoint()
+{
+	std::wstring result;
+	const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+	IMMDeviceEnumerator* enumerator = nullptr;
+	IMMDevice* device = nullptr;
+	LPWSTR id = nullptr;
+	if (SUCCEEDED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator))) &&
+		SUCCEEDED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device)) && SUCCEEDED(device->GetId(&id)) && id)
+		result = id;
+	if (id) CoTaskMemFree(id);
+	if (device) device->Release();
+	if (enumerator) enumerator->Release();
+	if (SUCCEEDED(comResult)) CoUninitialize();
+	return result;
+}
+#elif !defined(__ANDROID__) && !defined(__SWITCH__) && !defined(CANE_IOS)
+// FAudio's device names (UTF-16) as UTF-8.
+static std::string Utf8FromUtf16(const int16_t* text, size_t capacity)
+{
+	std::string out;
+	for (size_t i = 0; i < capacity && text[i] != 0; ++i)
+	{
+		uint32_t c = static_cast<uint16_t>(text[i]);
+		if (c >= 0xD800 && c < 0xDC00 && i + 1 < capacity)
+		{
+			const uint32_t low = static_cast<uint16_t>(text[i + 1]);
+			if (low >= 0xDC00 && low < 0xE000)
+				c = 0x10000 + ((c - 0xD800) << 10) + (low - 0xDC00), ++i;
+		}
+		if (c < 0x80) out += static_cast<char>(c);
+		else if (c < 0x800) out += static_cast<char>(0xC0 | (c >> 6)), out += static_cast<char>(0x80 | (c & 0x3F));
+		else if (c < 0x10000)
+			out += static_cast<char>(0xE0 | (c >> 12)), out += static_cast<char>(0x80 | ((c >> 6) & 0x3F)),
+			out += static_cast<char>(0x80 | (c & 0x3F));
+		else
+			out += static_cast<char>(0xF0 | (c >> 18)), out += static_cast<char>(0x80 | ((c >> 12) & 0x3F)),
+			out += static_cast<char>(0x80 | ((c >> 6) & 0x3F)), out += static_cast<char>(0x80 | (c & 0x3F));
+	}
+	return out;
+}
+#define CANE_FAUDIO_DEVICE_LIST 1
 #endif
 
+// The output devices: "System Default" (id and name "") first, then the system's. Windows: the active render endpoints
+// (their friendly names, as SDL's WASAPI names them, so Sly 2's Settings.ini values match). Linux / macOS: FAudio's list
+// (SDL's device names; index 0, its default, is the first entry); it needs the audio engine, so before it starts only
+// the default is listed. Android, iOS and the Switch: the default only (the row is hidden there).
 static std::vector<AudioOutputDevice> AudioOutputDevices()
 {
-	std::vector<AudioOutputDevice> devices{ { {}, "System Default" } };
+	std::vector<AudioOutputDevice> devices{ { {}, {} } };
 #ifdef _WIN32
 	const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 	IMMDeviceEnumerator* enumerator = nullptr;
@@ -184,7 +239,7 @@ static std::vector<AudioOutputDevice> AudioOutputDevices()
 			PropVariantInit(&name);
 			if (SUCCEEDED(collection->Item(i, &device)) && SUCCEEDED(device->GetId(&id)) &&
 				SUCCEEDED(device->OpenPropertyStore(STGM_READ, &properties)) &&
-				SUCCEEDED(properties->GetValue(PKEY_Device_FriendlyName, &name)))
+				SUCCEEDED(properties->GetValue(PKEY_Device_FriendlyName, &name)) && name.vt == VT_LPWSTR)
 			{
 				devices.push_back({ Utf8FromWide(id), Utf8FromWide(name.pwszVal) });
 			}
@@ -197,9 +252,46 @@ static std::vector<AudioOutputDevice> AudioOutputDevices()
 	if (collection) collection->Release();
 	if (enumerator) enumerator->Release();
 	if (SUCCEEDED(comResult)) CoUninitialize();
+#elif defined(CANE_FAUDIO_DEVICE_LIST)
+	if (s_xaudio2 != nullptr && s_xaudio2->handle != nullptr)
+	{
+		uint32_t count = 0;
+		if (FAudio_GetDeviceCount(s_xaudio2->handle, &count) == 0)
+			for (uint32_t i = 1; i < count; ++i)
+			{
+				FAudioDeviceDetails details{};
+				if (FAudio_GetDeviceDetails(s_xaudio2->handle, i, &details) != 0)
+					continue;
+				const std::string name = Utf8FromUtf16(details.DisplayName, std::size(details.DisplayName));
+				if (!name.empty())
+					devices.push_back({ std::to_string(i), name });
+			}
+	}
 #endif
 	return devices;
 }
+
+// The index of a device in the list by name: the exact name, then the same name ignoring case and outer blanks
+// (as SafeHouse's platform/audio_devices.h matches); -1 for the default or a missing device.
+static std::string TrimmedLower(const std::string& text)
+{
+	const size_t begin = text.find_first_not_of(" \t");
+	if (begin == std::string::npos) return {};
+	std::string out = text.substr(begin, text.find_last_not_of(" \t") - begin + 1);
+	for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	return out;
+}
+static int FindAudioOutputDevice(const std::vector<AudioOutputDevice>& devices, const std::string& name)
+{
+	if (name.empty()) return -1;
+	for (size_t i = 1; i < devices.size(); ++i)
+		if (devices[i].name == name) return static_cast<int>(i);
+	const std::string wanted = TrimmedLower(name);
+	for (size_t i = 1; i < devices.size(); ++i)
+		if (TrimmedLower(devices[i].name) == wanted) return static_cast<int>(i);
+	return -1;
+}
+
 static IXAudio2SubmixVoice* s_effectDryVoice = nullptr;
 static IXAudio2SubmixVoice* s_effectWetInputVoice = nullptr;
 static IXAudio2SubmixVoice* s_effectStudioCVoice = nullptr;
@@ -440,53 +532,109 @@ static void PrimeMusicSequencerStartup();
 static bool FinishPendingVagLoad();
 static bool RecoverAudioEngine();
 
+// The setting as the settings file keeps it: the chosen device's name ("" the system default).
 std::string GetAudioOutputDeviceId()
 {
-	return s_audioOutputDeviceId;
+	return s_audioOutputDeviceWanted;
 }
 
+// The Audio Output row's value: "System Default" (the menu translates it) or the chosen device's name.
 std::string GetAudioOutputDeviceName()
 {
-	for (const AudioOutputDevice& device : AudioOutputDevices())
-		if (device.id == s_audioOutputDeviceId)
-			return device.name;
-	return "System Default";
+	return s_audioOutputDeviceWanted.empty() ? std::string("System Default") : s_audioOutputDeviceWanted;
 }
 
+// The device the engine should open now: the chosen one while it is listed, else the default ("").
+static std::string AudioOutputDeviceTarget(const std::vector<AudioOutputDevice>& devices)
+{
+	const int index = FindAudioOutputDevice(devices, s_audioOutputDeviceWanted);
+	return index < 0 ? std::string() : devices[static_cast<size_t>(index)].name;
+}
+
+// From the settings file: a device's name. Older files (ProjectCane's and SafeHouse's before 0.3) kept the Windows
+// endpoint's id instead: an id of a present endpoint becomes its name, an unknown one the default.
 void SetAudioOutputDeviceId(const std::string& deviceId)
 {
-	std::string validatedId;
-	for (const AudioOutputDevice& device : AudioOutputDevices())
+	std::string wanted = deviceId;
+	const size_t begin = wanted.find_first_not_of(" \t");
+	wanted = begin == std::string::npos ? std::string() : wanted.substr(begin, wanted.find_last_not_of(" \t") - begin + 1);
+	if (wanted.rfind("{0.0.0.", 0) == 0)
 	{
-		if (device.id == deviceId)
-		{
-			validatedId = deviceId;
-			break;
-		}
+		std::string name;
+#ifdef _WIN32
+		for (const AudioOutputDevice& device : AudioOutputDevices())
+			if (!device.id.empty() && device.id == wanted)
+				name = device.name;
+#endif
+		wanted = name;
 	}
-	if (s_audioOutputDeviceId == validatedId) return;
-	s_audioOutputDeviceId = validatedId;
-	if (s_xaudio2 != nullptr)
+	if (s_audioOutputDeviceWanted == wanted) return;
+	s_audioOutputDeviceWanted = wanted;
+	if (s_xaudio2 != nullptr && AudioOutputDeviceTarget(AudioOutputDevices()) != s_audioOutputDeviceOpen)
 		RecoverAudioEngine();
 }
 
+// The Audio Output row's left / right: the next device ("System Default" first, then the listed devices, then the
+// chosen one when it is unplugged, so the choice is not lost by passing over it).
 void SelectAudioOutputDevice(int direction)
 {
 	const std::vector<AudioOutputDevice> devices = AudioOutputDevices();
-	if (devices.empty()) return;
-	auto current = std::find_if(devices.begin(), devices.end(), [](const AudioOutputDevice& device)
+	std::vector<std::string> choices;
+	for (const AudioOutputDevice& device : devices)
+		choices.push_back(device.name);
+	if (!s_audioOutputDeviceWanted.empty() && FindAudioOutputDevice(devices, s_audioOutputDeviceWanted) < 0)
+		choices.push_back(s_audioOutputDeviceWanted);
+	int index = 0;
+	for (size_t i = 0; i < choices.size(); ++i)
+		if (choices[i] == s_audioOutputDeviceWanted)
+			index = static_cast<int>(i);
+	const int count = static_cast<int>(choices.size());
+	index = (index + (direction < 0 ? -1 : 1) + count) % count;
+	const std::string previous = s_audioOutputDeviceWanted;
+	s_audioOutputDeviceWanted = choices[static_cast<size_t>(index)];
+	if (s_xaudio2 == nullptr || AudioOutputDeviceTarget(devices) == s_audioOutputDeviceOpen)
+		return;
+	if (!RecoverAudioEngine())
 	{
-		return device.id == s_audioOutputDeviceId;
-	});
-	int index = current == devices.end() ? 0 : static_cast<int>(current - devices.begin());
-	index = (index + (direction < 0 ? -1 : 1) + static_cast<int>(devices.size())) %
-		static_cast<int>(devices.size());
-	const std::string previous = s_audioOutputDeviceId;
-	s_audioOutputDeviceId = devices[index].id;
-	if (s_xaudio2 != nullptr && !RecoverAudioEngine())
-	{
-		s_audioOutputDeviceId = previous;
+		s_audioOutputDeviceWanted = previous;
 		RecoverAudioEngine();
+	}
+}
+
+// Every 2 seconds (ServiceAudioDevice): the chosen device unplugged (play on the default), back again (take it
+// again), or on Windows the system default changed while playing on it (follow it; FAudio's SDL default follows
+// by itself).
+static void PollAudioOutputDevice()
+{
+	if (s_xaudio2 == nullptr)
+		return;
+#ifndef _WIN32
+	if (s_audioOutputDeviceWanted.empty() && s_audioOutputDeviceOpen.empty())
+		return;
+#endif
+	static std::chrono::steady_clock::time_point s_next{};
+	const auto now = std::chrono::steady_clock::now();
+	if (now < s_next)
+		return;
+	s_next = now + std::chrono::seconds(2);
+	const std::string target = AudioOutputDeviceTarget(AudioOutputDevices());
+	bool reopen = target != s_audioOutputDeviceOpen;
+#ifdef _WIN32
+	if (!reopen && target.empty())
+	{
+		const std::wstring endpoint = DefaultAudioEndpoint();
+		reopen = !endpoint.empty() && endpoint != s_audioDefaultEndpointOpen;
+	}
+#endif
+	if (!reopen)
+		return;
+	std::fprintf(stderr, "audio: output device: %s\n", target.empty()
+		? (s_audioOutputDeviceWanted.empty() ? "the system default" : "the chosen device is missing, the system default")
+		: target.c_str());
+	if (!RecoverAudioEngine())
+	{
+		s_audioRecoveryPending = true;
+		s_audioRecoveryRetry = now + std::chrono::seconds(1);
 	}
 }
 static bool CreateVagStreamVoice(VagStreamState& stream, uint64_t playBegin);
@@ -1365,18 +1513,24 @@ bool EnsureMusicEngine()
 	finalOutput->SetTargetGain(0.0f);
 	XAUDIO2_EFFECT_DESCRIPTOR finalEffect{finalOutput, TRUE, 2};
 	XAUDIO2_EFFECT_CHAIN finalChain{1, &finalEffect};
-	const std::wstring outputDeviceId = WideFromUtf8(s_audioOutputDeviceId);
+	// (the chosen device by name while it is listed, else the system default)
+	const std::vector<AudioOutputDevice> devices = AudioOutputDevices();
+	const int deviceIndex = FindAudioOutputDevice(devices, s_audioOutputDeviceWanted);
+	const std::wstring outputDeviceId = deviceIndex < 0 ? std::wstring()
+		: WideFromUtf8(devices[static_cast<size_t>(deviceIndex)].id);
+	s_audioOutputDeviceOpen = deviceIndex < 0 ? std::string() : devices[static_cast<size_t>(deviceIndex)].name;
+	s_audioDefaultEndpointOpen = deviceIndex < 0 ? DefaultAudioEndpoint() : std::wstring();
 	HRESULT masteringResult = s_xaudio2->CreateMasteringVoice(
 		&s_musicMasterVoice, 2, 48000, 0,
 		outputDeviceId.empty() ? nullptr : outputDeviceId.c_str(), &finalChain,
 		AudioCategory_GameEffects);
 	if (FAILED(masteringResult) && !outputDeviceId.empty())
 	{
-		// A saved endpoint can disappear or reject the requested fixed 48 kHz
-		// graph after settings validation. Fall back to the Windows default so
-		// one stale device ID cannot disable all game audio.
-		s_audioOutputDeviceId.clear();
+		// A listed endpoint can disappear or reject the requested fixed 48 kHz graph: play on the Windows default
+		// (the choice is kept; the device poll takes it again once it opens).
 		s_musicMasterVoice = nullptr;
+		s_audioOutputDeviceOpen.clear();
+		s_audioDefaultEndpointOpen = DefaultAudioEndpoint();
 		masteringResult = s_xaudio2->CreateMasteringVoice(
 			&s_musicMasterVoice, 2, 48000, 0, nullptr, &finalChain,
 			AudioCategory_GameEffects);
@@ -1385,8 +1539,24 @@ bool EnsureMusicEngine()
 		s_finalOutputProcessor = finalOutput;
 	finalOutput->Release();
 	#else
-	const HRESULT masteringResult = s_xaudio2->CreateMasteringVoice(
-		&s_musicMasterVoice, 2, 48000);
+	// (the chosen device by name while FAudio lists it, else the default: FAudio's index 0)
+	HRESULT masteringResult = E_FAIL;
+	s_audioOutputDeviceOpen.clear();
+	#if defined(CANE_FAUDIO_DEVICE_LIST)
+	const std::vector<AudioOutputDevice> devices = AudioOutputDevices();
+	const int deviceIndex = FindAudioOutputDevice(devices, s_audioOutputDeviceWanted);
+	if (deviceIndex >= 0)
+	{
+		masteringResult = s_xaudio2->CreateMasteringVoice(&s_musicMasterVoice, 2, 48000,
+			static_cast<uint32_t>(std::stoul(devices[static_cast<size_t>(deviceIndex)].id)));
+		if (SUCCEEDED(masteringResult))
+			s_audioOutputDeviceOpen = devices[static_cast<size_t>(deviceIndex)].name;
+		else
+			s_musicMasterVoice = nullptr;
+	}
+	#endif
+	if (FAILED(masteringResult))
+		masteringResult = s_xaudio2->CreateMasteringVoice(&s_musicMasterVoice, 2, 48000);
 	#endif
 	if (FAILED(masteringResult))
 	{
@@ -6126,7 +6296,10 @@ void ServiceAudioDevice()
 		s_audioRecoveryRetry = {};
 	}
 	if (!s_audioRecoveryPending)
+	{
+		PollAudioOutputDevice();
 		return;
+	}
 
 	const auto now = std::chrono::steady_clock::now();
 	if (s_audioRecoveryRetry.time_since_epoch().count() != 0 && now < s_audioRecoveryRetry)

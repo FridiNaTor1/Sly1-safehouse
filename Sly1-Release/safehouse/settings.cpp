@@ -97,7 +97,10 @@ VIDEOSAVESETTINGS ToGame(const st::Sly1Settings& s)
 	v.monitorIndex = (std::max)(0, cane::monitor::resolve(monitors, cane::monitor::load(y.monitor)));
 	v.resolutionScalePercent = s.sly1.resolutionScale;
 	v.controllerDeadzone = s.sly1.deadZone;
-	std::snprintf(v.audioOutputDeviceId, sizeof(v.audioOutputDeviceId), "%s", s.sly1.audioDeviceId.c_str());
+	// (the output device by name, Sly 2's [Audio] Output Device; an older file's Windows endpoint id until the game has
+	// turned it into a name: sound.cpp SetAudioOutputDeviceId)
+	std::snprintf(v.audioOutputDeviceId, sizeof(v.audioOutputDeviceId), "%s",
+		(s.game.outputDevice.empty() ? s.sly1.audioDeviceId : s.game.outputDevice).c_str());
 	v.monitorName[0] = '\0';
 	return v;
 }
@@ -144,7 +147,15 @@ void FromGame(st::Sly1Settings& s, const VIDEOSAVESETTINGS& v, const VIDEOSAVESE
 	}
 	if (SH_CHANGED(resolutionScalePercent)) s.sly1.resolutionScale = v.resolutionScalePercent;
 	if (SH_CHANGED(controllerDeadzone)) s.sly1.deadZone = v.controllerDeadzone;
-	if (SH_CHANGED(audioOutputDeviceId)) s.sly1.audioDeviceId = v.audioOutputDeviceId;
+	if (SH_CHANGED(audioOutputDeviceId))
+	{
+		s.game.outputDevice = cane::audio::cleanName(v.audioOutputDeviceId);
+		// (the old Output Device ID, kept among the unknown keys until now: sly1_settings.h sly1Upgrade)
+		s.sly1.audioDeviceId.clear();
+		if (cane::ini::Section* audio = s.unknown.section("Audio"))
+			audio->entries.erase(std::remove_if(audio->entries.begin(), audio->entries.end(), [](const cane::ini::Entry& e)
+				{ return cane::ini::keyForm(e.key) == cane::ini::keyForm("Output Device ID"); }), audio->entries.end());
+	}
 #undef SH_CHANGED
 }
 }

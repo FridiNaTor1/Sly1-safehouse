@@ -215,12 +215,13 @@ struct IXAudio2
     FAudio* handle = nullptr;
     HRESULT RegisterForCallbacks(IXAudio2EngineCallback*) { return S_OK; }
     void UnregisterForCallbacks(IXAudio2EngineCallback*) {}
+	// (deviceIndex: FAudio's output device, 0 its default; FAudio_GetDeviceDetails lists them)
 	HRESULT CreateMasteringVoice(IXAudio2MasteringVoice** result,
-		uint32_t channels = 0, uint32_t sampleRate = 0)
+		uint32_t channels = 0, uint32_t sampleRate = 0, uint32_t deviceIndex = 0)
 	{
 		auto voice = std::make_unique<IXAudio2MasteringVoice>();
 		const uint32_t status = FAudio_CreateMasteringVoice(
-			handle, &voice->handle, channels, sampleRate, 0, 0, nullptr);
+			handle, &voice->handle, channels, sampleRate, 0, deviceIndex, nullptr);
         if (status == 0)
             *result = voice.release();
         return static_cast<HRESULT>(status);
