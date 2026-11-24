@@ -27,6 +27,11 @@ extern bool g_fControllerVibration;
 // Cross, system_settings.h kSly1RhythmPads' order; W, A, D, Space by default): actionbind.h RhythmKeysLive says when
 // they are read.
 extern std::array<int, 4> g_rhythmKeyBindings;
+// The cutscene / conversation skip's own bindings (Settings.ini [Keyboard] / [Controller] Skip Cutscene; Enter and R1 by
+// default): a key or mouse button (the game's codes, Input.h) and a GLFW gamepad button (or a trigger), -1 none. They
+// are no PS2 button: skipcut.h reads them, and while a scene can be skipped they press nothing else (Input.cpp).
+extern int g_skipKeyBinding;
+extern int g_skipPadBinding;
 // The keyboard camera keys' up / down this input update (1 up, -1 down, 0 neither or a menu has them), set by
 // JOY::Update beside the right stick they drive: in the binocucom they look up / down as the arrows' left / right look
 // around (cplook.cpp), instead of zooming. Defined in Input.cpp.
@@ -42,6 +47,7 @@ void PcInputToSettings(cane::settings::SystemSettings& settings);
 extern void (*g_pfnPcInputSave)();
 void PcInputSave();
 
-// (tests) SLY1_PCOPT="promptstyle=2,alwaysps=1,mousecamera=0,autocam=0,key6=32,pad6=1,menus=0": options
-// over the settings (keyN / padN: JOY_BUTTON N's keyboard / gamepad binding, Input.h order).
+// (tests) SLY1_PCOPT="promptstyle=2,alwaysps=1,mousecamera=0,autocam=0,key6=32,pad6=1,menus=0,skipkey=257,skippad=5":
+// options over the settings (keyN / padN: JOY_BUTTON N's keyboard / gamepad binding, Input.h order; skipkey / skippad:
+// the skip's).
 void ApplyPcInputEnv();

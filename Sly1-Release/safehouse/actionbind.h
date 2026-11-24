@@ -21,7 +21,9 @@ Context CurrentContext();
 // With the mapping on: the PS2 buttons held this update from the actions' keys and mouse buttons (fBlockMenuMouse:
 // a menu takes the left / right mouse buttons) and the pad's buttons (pad: null without a pad). fRhythmKeys
 // (RhythmKeysLive): the rhythm minigame's keys decide its buttons, and no other action takes those keys.
-void HeldButtons(GLFWwindow* window, const GLFWgamepadstate* pad, bool fBlockMenuMouse, bool fRhythmKeys, JOY::BUTTONS& held);
+// keyExcluded / padExcluded (or -1): the skip's bindings while a scene can be skipped (skipcut.h): no action takes them.
+void HeldButtons(GLFWwindow* window, const GLFWgamepadstate* pad, bool fBlockMenuMouse, bool fRhythmKeys, int keyExcluded,
+    int padExcluded, JOY::BUTTONS& held);
 
 // The rhythm minigame's own keys (system_settings.h kSly1RhythmPads: Triangle, Square, Circle, Cross; W, A, D, Space by
 // default) are read only while the minigame is the player and no menu is open (fMenu: the pause menu and the other

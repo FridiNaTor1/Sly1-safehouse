@@ -11,6 +11,7 @@
 #include "../gl.h"
 #include "../glshaders.h"
 #include "../prompt.h"
+#include "prompt_glyphs.h"
 #include "../screen.h"
 #include "../sw.h"
 #include "../transition.h"
@@ -20,10 +21,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 namespace
 {
-constexpr float T_HOLD = 2.0f;           // seconds of Circle to skip
+constexpr float T_HOLD = 2.0f;           // seconds of the skip's hold
 constexpr float T_HINT = 4.0f;           // the hint stays this long after the last button
 constexpr float DT_CAP = 240.0f;         // a skip stops after 4 minutes of game time (a stuck scene)
 constexpr float DT_STEP = 1.0f / 60.0f;  // the fast-forward's step
@@ -32,18 +34,21 @@ struct SKIPCUT
 {
 	bool fHint = false;       // the hint shown
 	float tHint = 0.0f;       // since the last button
-	float tHold = 0.0f;       // Circle held this long
+	float tHold = 0.0f;       // the skip held this long
 	bool fFast = false;       // fast-forwarding
 	float tFastStart = 0.0f;  // g_clock.t at its start
 	int cstep = 0;            // its steps
-	bool fMaskCircle = false; // the Circle that skipped: hidden from the game until released
-	bool fAwaitRelease = false; // a Circle held into the scene cannot start a skip until released
+	bool fMaskSkip = false;   // the input that skipped: it presses nothing until released
+	bool fAwaitRelease = false; // a skip held into the scene cannot start a skip until released
 	uint32_t grfCarried = 0;  // buttons held into the scene (or in its first moments): no hint until released (Sly 2)
 	float tScene = 0.0f;      // since the scene started
 	bool fAck = false;        // the skip decided: this frame shows the ring full, the next one skips (Sly 2)
 };
 SKIPCUT s_skip;
 SKIPCUT s_skipMovie;
+bool s_fSkipHeld = false, s_fSkipHeldPrev = false;   // the skip's own input (Input.cpp ShSetSkipInput)
+constexpr int BIT_SKIP = BTN_MAX;                     // its bit beside the PS2 buttons' in GrfHeld
+static_assert(BTN_MAX < 31);
 
 bool FInstant() { return ShSettings().system.instantSkipCutscenes != 0; }
 
@@ -54,10 +59,10 @@ bool FPrint()
 	return s_f;
 }
 
-// The buttons that show the hint: the player's own presses (g_joy.current is the window's input), as Sly 2's, but not
-// movement: the d-pad (the keyboard's movement keys WASD are the d-pad's bindings) never shows it, nor do the sticks,
-// the mouse's motion or the camera keys (they are no buttons). A button held into the scene shows nothing until it is
-// released and pressed again.
+// The buttons that show the hint: the player's own presses (g_joy.current is the window's input) and the skip's own
+// input, as Sly 2's, but not movement: the d-pad (the keyboard's movement keys WASD are the d-pad's bindings) never
+// shows it, nor do the sticks, the mouse's motion or the camera keys (they are no buttons). A button held into the scene
+// shows nothing until it is released and pressed again.
 uint32_t GrfHeld()
 {
 	uint32_t grf = 0;
@@ -65,6 +70,8 @@ uint32_t GrfHeld()
 		if (button != BTN_UP && button != BTN_DOWN && button != BTN_LEFT && button != BTN_RIGHT &&
 			g_joy.current[static_cast<JOY_BUTTON>(button)])
 			grf |= 1u << button;
+	if (s_fSkipHeld)
+		grf |= 1u << BIT_SKIP;
 	return grf;
 }
 uint32_t GrfPrevious()
@@ -73,6 +80,8 @@ uint32_t GrfPrevious()
 	for (int button = 0; button < BTN_MAX; ++button)
 		if (g_joy.previous[static_cast<JOY_BUTTON>(button)])
 			grf |= 1u << button;
+	if (s_fSkipHeldPrev)
+		grf |= 1u << BIT_SKIP;
 	return grf;
 }
 
@@ -83,15 +92,15 @@ void StartScene(SKIPCUT& s)
 	s.tHint = s.tHold = 0.0f;
 	s.fAck = false;
 	s.grfCarried = GrfHeld();
-	s.fAwaitRelease = g_joy.current[BTN_CIRCLE] && g_joy.previous[BTN_CIRCLE];
+	s.fAwaitRelease = s_fSkipHeld && s_fSkipHeldPrev;
 	s.tScene = 0.0f;
 }
 
 // The state machine of the game and the movies: true when the skip starts now.
 bool FUpdateHold(SKIPCUT& s, float dtReal, bool fSkippable)
 {
-	const bool fCircle = g_joy.current[BTN_CIRCLE];
-	if (!fCircle)
+	const bool fSkip = s_fSkipHeld;
+	if (!fSkip)
 		s.fAwaitRelease = false;
 	if (!fSkippable)
 	{
@@ -117,10 +126,10 @@ bool FUpdateHold(SKIPCUT& s, float dtReal, bool fSkippable)
 		s.tHold = 0.0f;
 		return false;
 	}
-	if (fCircle && s.fHint)
+	if (fSkip && s.fHint)
 	{
 		s.tHint = 0.0f;
-		if (FInstant() && !g_joy.previous[BTN_CIRCLE])
+		if (FInstant() && !s_fSkipHeldPrev)
 			return true;
 		s.tHold += dtReal;
 		if (s.tHold >= T_HOLD)
@@ -150,23 +159,26 @@ void StartFast()
 	s_skip.tFastStart = g_clock.t;
 	s_skip.fHint = false;
 	s_skip.tHold = 0.0f;
-	s_skip.fMaskCircle = true;
+	s_skip.fMaskSkip = true;
 	ShSetSkipCutSound(true);
 	if (FPrint())
 		std::printf("skipcut: skipping at t %.2f\n", g_clock.t);
 }
 
-const char* HintText(bool fIcons)
+// "Hold [skip] to skip": the skip's icon (the controller font's skip glyph, prompt_glyphs.h PROMPTGLYPH_SKIP: the bound
+// button's icon or keycap), or its name without that font.
+std::string HintText(bool fIcons)
 {
-	if (FJapaneseContent())
-		return fIcons ? "&2O&.を押し続けるとスキップ" : "まるボタンを押し続けるとスキップ";
-	return fIcons ? ContentUiText("Hold &2O&. to skip", "Maintiens &2O&. pour passer", "&2O&. halten zum Überspringen",
-		                      "Mantén &2O&. para saltar", "Tieni premuto &2O&. per saltare")
-	              : ContentUiText("Hold Circle to skip", "Maintiens Rond pour passer", "Kreis halten zum Überspringen",
-		                      "Mantén Círculo para saltar", "Tieni premuto Cerchio per saltare");
+	const std::string button = fIcons ? std::string("&2") + PROMPTGLYPH_SKIP + "&." : PromptSkipLabel();
+	const char* pchz = FJapaneseContent() ? "%sを押し続けるとスキップ"
+		: ContentUiText("Hold %s to skip", "Maintiens %s pour passer", "%s halten zum Überspringen", "Mantén %s para saltar",
+			"Tieni premuto %s per saltare");
+	std::string text(pchz);
+	text.replace(text.find("%s"), 2, button);
+	return text;
 }
 
-// The hint (and the ring while Circle is held), small in the bottom right corner, clear of the subtitles.
+// The hint (and the ring while the skip is held), small in the bottom right corner, clear of the subtitles.
 void DrawHint(const SKIPCUT& s)
 {
 	if (!s.fHint || g_pfont == nullptr)
@@ -179,7 +191,8 @@ void DrawHint(const SKIPCUT& s)
 
 	pfont->PushScaling(textScale, textScale);
 	const float dy = static_cast<float>(pfont->m_dyUnscaled) * pfont->m_ryScale;
-	CRichText text(HintText(fIcons), pfont);
+	const std::string hint = HintText(fIcons);
+	CRichText text(hint.c_str(), pfont);
 	const float dx = text.Dx();
 	const float xRight = g_gl.width - 20.0f * g_gl.uiScale;
 	const float yTop = g_gl.height - 20.0f * g_gl.uiScale - dy;
@@ -203,11 +216,12 @@ void DrawHint(const SKIPCUT& s)
 
 	if ((s.tHold > 0.0f || s.fAck) && fIcons && (s.fAck || !FInstant()))
 	{
-		// the ring: the Circle icon, a line circling it as the hold fills
+		// the ring: the skip's icon, a line circling it as the hold fills
 		const float big = textScale * 1.6f;
 		pfont->PushScaling(big, big);
 		const float dyIcon = static_cast<float>(pfont->m_dyUnscaled) * pfont->m_ryScale;
-		CRichText icon("&2O&.", pfont);
+		const std::string skipGlyph = std::string("&2") + PROMPTGLYPH_SKIP + "&.";
+		CRichText icon(skipGlyph.c_str(), pfont);
 		const float dxIcon = icon.Dx();
 		const float cx = xRight - dx - 22.0f * scale - dyIcon * 0.5f;
 		const float cy = yTop + dy * 0.5f;
@@ -273,13 +287,9 @@ DIALOG* PdialogShSkippable()
 
 void ShUpdateSkipCut(float dtReal)
 {
-	if (s_skip.fMaskCircle)
-	{
-		if (!g_joy.current[BTN_CIRCLE] && !s_skip.fFast)
-			s_skip.fMaskCircle = false;
-		else
-			g_joy.current[BTN_CIRCLE] = false;
-	}
+	// (the input that skipped presses nothing until it is released: FShSkipInputCaptured)
+	if (s_skip.fMaskSkip && !s_fSkipHeld && !s_skip.fFast)
+		s_skip.fMaskSkip = false;
 	if (s_skip.fFast)
 		return;
 	// The scene the hold belongs to: a letterboxed cutscene (fast-forwarded to its end), else a binocucom conversation
@@ -312,7 +322,7 @@ void ShUpdateSkipCut(float dtReal)
 			std::printf("skipcut: hint (hold %.2f) at frame %ld\n", s_skip.tHold, static_cast<long>(g_cframe));
 	}
 	bool fTest = false;
-	if (s_tSkipAt >= 0.0f && fSkippable && g_clock.t >= s_tSkipAt && !s_skip.fMaskCircle)
+	if (s_tSkipAt >= 0.0f && fSkippable && g_clock.t >= s_tSkipAt && !s_skip.fMaskSkip)
 	{
 		static bool s_fDone = false;
 		if (!s_fDone)
@@ -328,23 +338,34 @@ void ShUpdateSkipCut(float dtReal)
 	{
 		s_skip.fAck = true;
 		s_skip.fHint = true;
-		g_joy.current[BTN_CIRCLE] = false;
 		return;
 	}
 	if (!fStart)
 		return;
-	g_joy.current[BTN_CIRCLE] = false;
 	if (pdialog != nullptr)
 	{
 		s_skip.fHint = false;
 		s_skip.tHold = 0.0f;
-		s_skip.fMaskCircle = true;
+		s_skip.fMaskSkip = true;
 		if (FPrint())
 			std::printf("skipcut: conversation skipped at t %.2f\n", g_clock.t);
 		FinishDialogEvents(pdialog);
 		return;
 	}
 	StartFast();
+}
+
+void ShSetSkipInput(bool fHeld)
+{
+	s_fSkipHeldPrev = s_fSkipHeld;
+	s_fSkipHeld = fHeld;
+}
+
+bool FShSkipSceneLive() { return FShCutsceneActive() || PdialogShSkippable() != nullptr; }
+
+bool FShSkipInputCaptured()
+{
+	return s_skip.fMaskSkip || s_skip.fFast || FCutscenePlaying() || FShSkipSceneLive();
 }
 
 bool FShSkipCutFastForward() { return s_skip.fFast; }
@@ -373,7 +394,7 @@ float ShClockFixedStep() { return s_skip.fFast ? DT_STEP : 0.0f; }
 void ShResetMovieSkip()
 {
 	s_skipMovie = SKIPCUT{};
-	StartScene(s_skipMovie);   // (the buttons held into the movie show no hint, a held Circle skips nothing until released)
+	StartScene(s_skipMovie);   // (the buttons held into the movie show no hint, a held skip skips nothing until released)
 }
 
 bool FShMovieSkipHeld()
@@ -384,7 +405,7 @@ bool FShMovieSkipHeld()
 	s_tLast = now;
 	if (FUpdateHold(s_skipMovie, dtReal, true))
 	{
-		s_skip.fMaskCircle = true;   // (the game after the movie does not see this Circle)
+		s_skip.fMaskSkip = true;   // (the game after the movie does not see this press)
 		return true;
 	}
 	return false;

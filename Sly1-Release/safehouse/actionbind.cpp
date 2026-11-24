@@ -70,7 +70,8 @@ bool FPadHeld(const GLFWgamepadstate& pad, int binding)
 }
 }
 
-void HeldButtons(GLFWwindow* window, const GLFWgamepadstate* pad, bool fBlockMenuMouse, bool fRhythmKeys, JOY::BUTTONS& held)
+void HeldButtons(GLFWwindow* window, const GLFWgamepadstate* pad, bool fBlockMenuMouse, bool fRhythmKeys, int keyExcluded,
+    int padExcluded, JOY::BUTTONS& held)
 {
     held.fill(false);
     const Context context = CurrentContext();
@@ -80,7 +81,9 @@ void HeldButtons(GLFWwindow* window, const GLFWgamepadstate* pad, bool fBlockMen
     {
         const int key = profile.keyboard[i];
         bool fHeld = false;
-        if (input::applies(profile, Action(i), contextKeys) &&
+        if (key != GLFW_KEY_UNKNOWN && key == keyExcluded)
+            fHeld = false;
+        else if (input::applies(profile, Action(i), contextKeys) &&
             !(fRhythmKeys && input::kActions[i].context != Context::Rhythm && FRhythmKey(key)))
         {
             if (FMouseBinding(key))
@@ -90,7 +93,7 @@ void HeldButtons(GLFWwindow* window, const GLFWgamepadstate* pad, bool fBlockMen
             else
                 fHeld = FKeyHeld(window, key);
         }
-        if (pad != nullptr && input::applies(profile, Action(i), context))
+        if (pad != nullptr && input::applies(profile, Action(i), context) && !(profile.gamepad[i] >= 0 && profile.gamepad[i] == padExcluded))
             fHeld = fHeld || FPadHeld(*pad, profile.gamepad[i]);
         held[input::kActions[i].pad] = held[input::kActions[i].pad] || fHeld;
     }

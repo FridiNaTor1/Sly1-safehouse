@@ -20,6 +20,8 @@ void (*g_pfnPcInputSave)() = nullptr;
 std::array<int, 4> g_rhythmKeyBindings = { cane::settings::kSly1DefaultRhythmKeys[0], cane::settings::kSly1DefaultRhythmKeys[1],
                                            cane::settings::kSly1DefaultRhythmKeys[2], cane::settings::kSly1DefaultRhythmKeys[3] };
 static_assert(cane::settings::kSly1RhythmKeyCount == 4);
+int g_skipKeyBinding = cane::settings::kSly1DefaultSkipKey;
+int g_skipPadBinding = cane::settings::kSly1DefaultSkipPad;
 
 namespace st = cane::settings;
 
@@ -69,6 +71,8 @@ void PcInputSave()
     PcInputToSettings(ShSettingsMutable().system);
     for (int i = 0; i < st::kSly1RhythmKeyCount; ++i)
         ShSettingsMutable().sly1.rhythmKeys[size_t(i)] = g_rhythmKeyBindings[size_t(i)];
+    ShSettingsMutable().sly1.skipKey = ShKeyFromGame(g_skipKeyBinding);
+    ShSettingsMutable().sly1.skipPad = g_skipPadBinding;
     SaveSystemSettings();
 }
 
@@ -96,6 +100,8 @@ void ApplyPcInputEnv()
             else if (k == "mousecamera") g_fMouseCamera = n != 0;
             else if (k == "autocam") g_fAutoCameraRotation = n != 0;
             else if (k == "menus") g_mouseopt.fMenus = n != 0;
+            else if (k == "skipkey") g_skipKeyBinding = n;
+            else if (k == "skippad") g_skipPadBinding = n;
             else if (k.rfind("key", 0) == 0 && index >= 0 && index < BTN_MAX) g_keyboardBindings[index] = n;
             else if (k.rfind("pad", 0) == 0 && index >= 0 && index < BTN_MAX) g_gamepadBindings[index] = n;
         }

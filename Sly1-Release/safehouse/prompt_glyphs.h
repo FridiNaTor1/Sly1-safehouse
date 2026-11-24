@@ -43,8 +43,12 @@ JOY_BUTTON JoyButtonFromPromptGlyph(char ch);
 cane::input::Button PromptButtonForGlyph(char ch);
 // How to draw font-1 glyph ch right now.
 PROMPTGLYPH PromptGlyphFor(char ch);
-// The icon of the bound Circle (the skip indicator, skipcut.cpp).
-inline PROMPTGLYPH PromptGlyphCircle() { return PromptGlyphFor('O'); }
+// The cutscene / conversation skip's own glyph (skipcut.h: "&2k&."), no glyph of the original font: drawn as the skip's
+// bound controller button (pcinput.h g_skipPadBinding: its original glyph or its family's icon) or, for keyboard
+// players, its key's keycap (g_skipKeyBinding).
+inline constexpr char PROMPTGLYPH_SKIP = 'k';
+// The skip's button or key by name ("R1", "RB", "Enter"), for text without the controller font.
+std::string PromptSkipLabel();
 // Original level text names the stick in words but sometimes uses the other
 // stick's glyph ("The left &2)&. controls the sub"). The device icons would
 // then contradict the sentence, so the glyph after "left "/"right " is made to

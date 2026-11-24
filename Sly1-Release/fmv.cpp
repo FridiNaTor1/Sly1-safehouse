@@ -337,7 +337,7 @@ namespace
     bool SkipPressed()
     {
 #if defined(CANE_SAFEHOUSE)
-        // (also the cutscene skip's Circle hold, with its hint: safehouse/skipcut.h)
+        // (also the cutscene skip's hold, with its hint: safehouse/skipcut.h)
         if (FShMovieSkipHeld())
             return true;
 #endif

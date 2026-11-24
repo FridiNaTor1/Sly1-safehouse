@@ -23,6 +23,10 @@ bool ShSaveSystemSettings(const VIDEOSAVESETTINGS& settings);
 const cane::settings::Sly1Settings& ShSettings();
 cane::settings::Sly1Settings& ShSettingsMutable();
 
+// A binding between the file's codes (mouse buttons 2000 + n) and the game's (Input.h MouseBindingFromButton).
+int ShKeyToGame(int key);
+int ShKeyFromGame(int key);
+
 // Settings.ini's [Graphics] Renderer, read before the window exists (gl.cpp: 0 Auto, 1 Vulkan, 2 OpenGL; Auto without
 // a file).
 int ShRendererSetting();

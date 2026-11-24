@@ -32,12 +32,13 @@ using cane::input::Family;
 namespace input = cane::sly1input;
 
 enum ROWKIND { RK_Icons, RK_OriginalPs, RK_AutoCamera, RK_MouseInvertX, RK_MouseInvertY, RK_Advanced, RK_Header,
-               RK_Binding, RK_CameraKey, RK_RhythmKey, RK_Reset, RK_Back };
+               RK_Binding, RK_CameraKey, RK_RhythmKey, RK_Skip, RK_Reset, RK_Back };
 struct ROW
 {
     ROWKIND kind = RK_Binding;
     int index = 0;           // RK_Binding: the JOY_BUTTON (standard) or the action (advanced); RK_CameraKey: 0..3;
-                             // RK_RhythmKey: the rhythm slot 0..3 (system_settings.h kSly1RhythmPads)
+                             // RK_RhythmKey: the rhythm slot 0..3 (system_settings.h kSly1RhythmPads); RK_Skip: the
+                             // cutscene / conversation skip's own bindings (pcinput.h g_skipKeyBinding / g_skipPadBinding)
     std::string label;
 };
 
@@ -87,7 +88,8 @@ const char* const s_aszAction[][5] = {
     { "Next power-up", "Technique suivante", "Nächste Fähigkeit", "Habilidad siguiente", "Abilità successiva" },
     { "Talk to Bentley (binocucom)", "Parler à Bentley (binocucom)", "Mit Bentley sprechen (Binocucom)",
       "Hablar con Bentley (binocucom)", "Parla con Bentley (binocucom)" },
-    { "Skip dialogue", "Passer le dialogue", "Dialog überspringen", "Saltar diálogo", "Salta il dialogo" },
+    { "Talk to Bentley (second button)", "Parler à Bentley (deuxième bouton)", "Mit Bentley sprechen (zweite Taste)",
+      "Hablar con Bentley (segundo botón)", "Parla con Bentley (secondo tasto)" },
     { "Centre the camera", "Centrer la caméra", "Kamera zentrieren", "Centrar la cámara", "Centra la telecamera" },
     { "L3", "L3", "L3", "L3", "L3" },
     { "Pause", "Pause", "Pause", "Pausa", "Pausa" },
@@ -184,6 +186,10 @@ std::vector<ROW> Arow()
         for (int button = 0; button < BTN_MAX; ++button)
             a.push_back({RK_Binding, button, StrStandardLabel(button)});
     }
+    // the cutscene / conversation skip: its own key and button, in both mappings
+    a.push_back({RK_Skip, 0, T("Skip cutscene / conversation", "Passer la cinématique / la conversation",
+                               "Zwischensequenz / Gespräch überspringen", "Saltar cinemática / conversación",
+                               "Salta filmato / conversazione")});
     static const char* const s_aszCamera[4][5] = {
         { "Camera left", "Caméra à gauche", "Kamera links", "Cámara a la izquierda", "Telecamera a sinistra" },
         { "Camera right", "Caméra à droite", "Kamera rechts", "Cámara a la derecha", "Telecamera a destra" },
@@ -207,6 +213,11 @@ std::vector<ROW> Arow()
     return a;
 }
 bool FSelectable(const ROW& r) { return r.kind != RK_Header; }
+// A row of bindings (a keyboard and a controller cell).
+bool FBindingRow(const ROW& r)
+{
+    return r.kind == RK_Binding || r.kind == RK_CameraKey || r.kind == RK_RhythmKey || r.kind == RK_Skip;
+}
 bool FOption(const ROW& r) { return r.kind <= RK_Advanced; }
 
 // the binding shown in a cell (-2: no binding possible there, the right stick's fixed role; -3: none possible either,
@@ -217,6 +228,8 @@ int Binding(const ROW& r, bool controller)
         return controller ? -2 : g_cameraKeyBindings[size_t(r.index)];
     if (r.kind == RK_RhythmKey)
         return controller ? -3 : g_rhythmKeyBindings[size_t(r.index)];
+    if (r.kind == RK_Skip)
+        return controller ? g_skipPadBinding : g_skipKeyBinding;
     if (r.kind != RK_Binding)
         return -2;
     if (sly1actions::Active())
@@ -230,6 +243,17 @@ void SaveStandard() { PcInputSave(); }
 // button another action has moves to the old one's place (the two swap); the camera keys take no mouse button.
 void Bind(const ROW& r, bool controller, int binding)
 {
+    if (r.kind == RK_Skip)
+    {
+        // (its own binding: it may share a key or button with an action, Enter with Start by default; while a scene can be
+        // skipped it only skips. A controller's cleared skip returns to R1, as the other controller rows to theirs.)
+        if (controller)
+            g_skipPadBinding = binding < 0 ? cane::settings::kSly1DefaultSkipPad : binding;
+        else
+            g_skipKeyBinding = binding < 0 ? GLFW_KEY_UNKNOWN : binding;
+        SaveStandard();
+        return;
+    }
     if (r.kind == RK_Binding && sly1actions::Active())
     {
         if (sly1actions::profile.readOnly)
@@ -284,6 +308,8 @@ void Bind(const ROW& r, bool controller, int binding)
 
 void ResetDefaults()
 {
+    g_skipKeyBinding = cane::settings::kSly1DefaultSkipKey;
+    g_skipPadBinding = cane::settings::kSly1DefaultSkipPad;
     if (sly1actions::Active())
     {
         if (sly1actions::profile.readOnly)
@@ -291,6 +317,7 @@ void ResetDefaults()
         sly1actions::profile = input::defaults();
         sly1actions::profile.enabled = true;
         sly1actions::Save();
+        SaveStandard();
         return;
     }
     ResetKeyboardMouseBindings();
@@ -415,6 +442,7 @@ void Activate(const std::vector<ROW>& arow, int irow, int dir)
     case RK_Binding:
     case RK_CameraKey:
     case RK_RhythmKey:
+    case RK_Skip:
         if (Binding(r, s_remap.col == 1) <= -2)
             return;
         if (sly1actions::Active() && sly1actions::profile.readOnly && r.kind == RK_Binding)
@@ -569,7 +597,7 @@ void UpdateRemapPage(JOY* pjoy)
         const ROW& r = arow[size_t(s_remap.isel)];
         if (FOption(r))
             Activate(arow, s_remap.isel, d);
-        else if (r.kind == RK_Binding || r.kind == RK_CameraKey || r.kind == RK_RhythmKey)
+        else if (FBindingRow(r))
         {
             const int col = std::clamp(s_remap.col + d, 0, 1);
             if (col != s_remap.col)
@@ -586,9 +614,7 @@ void UpdateRemapPage(JOY* pjoy)
         return;
     }
     const bool fDelete = window != nullptr && glfwGetKey(window, GLFW_KEY_DELETE) == GLFW_PRESS;
-    if ((pjoy->IsPressed(BtnClear()) || fDelete) && (arow[size_t(s_remap.isel)].kind == RK_Binding ||
-                                                    arow[size_t(s_remap.isel)].kind == RK_CameraKey ||
-                                                    arow[size_t(s_remap.isel)].kind == RK_RhythmKey) &&
+    if ((pjoy->IsPressed(BtnClear()) || fDelete) && FBindingRow(arow[size_t(s_remap.isel)]) &&
         Binding(arow[size_t(s_remap.isel)], s_remap.col == 1) > -2)
     {
         Bind(arow[size_t(s_remap.isel)], s_remap.col == 1, -1);
@@ -767,7 +793,7 @@ void DrawRemapPage()
         if (fSel)
         {
             Rect(l.x0 + 8.0f * l.u, y + 1.0f, l.x1 - 8.0f * l.u, y + l.dyRow - 1.0f, Gs(30, 30, 30, 110));
-            if (r.kind == RK_Binding || r.kind == RK_CameraKey || r.kind == RK_RhythmKey)
+            if (FBindingRow(r))
             {
                 const float xc = s_remap.col ? l.xController : l.xKeyboard;
                 Rect(xc - l.wCell * 0.45f, y + 2.0f, xc + l.wCell * 0.45f, y + l.dyRow - 2.0f, Gs(54, 54, 54, 110));
@@ -804,6 +830,7 @@ void DrawRemapPage()
         case RK_Binding:
         case RK_CameraKey:
         case RK_RhythmKey:
+        case RK_Skip:
         {
             Text(r.label, l.x0 + 26.0f * l.u, yText, sizeRow, rgba, JH_Left, l.xKeyboard - l.wCell * 0.5f - l.x0 - 30.0f * l.u);
             for (int c = 0; c < 2; ++c)

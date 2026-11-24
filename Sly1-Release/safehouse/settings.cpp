@@ -160,12 +160,17 @@ void FromGame(st::Sly1Settings& s, const VIDEOSAVESETTINGS& v, const VIDEOSAVESE
 }
 }
 
-// The input options beside VIDEOSAVESETTINGS (pcinput.h), the rhythm minigame's keys among them.
+int ShKeyToGame(int key) { return KeyToGame(key); }
+int ShKeyFromGame(int key) { return KeyFromGame(key); }
+
+// The input options beside VIDEOSAVESETTINGS (pcinput.h), the rhythm minigame's keys and the skip's bindings among them.
 static void InputFromModel()
 {
-	PcInputFromSettings(s_model.system);
 	for (int i = 0; i < st::kSly1RhythmKeyCount; ++i)
 		g_rhythmKeyBindings[size_t(i)] = s_model.sly1.rhythmKeys[size_t(i)];
+	g_skipKeyBinding = KeyToGame(s_model.sly1.skipKey);
+	g_skipPadBinding = s_model.sly1.skipPad;
+	PcInputFromSettings(s_model.system);   // (last: the test switches, SLY1_PCOPT, over the file's values)
 }
 
 bool ShLoadSystemSettings(VIDEOSAVESETTINGS* settings)

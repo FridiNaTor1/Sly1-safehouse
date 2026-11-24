@@ -21,6 +21,7 @@ float g_controllerDeadzone = 0.35f;
 #include "safehouse/pcinput.h"
 #include "prompt.h"
 #include "safehouse/prompt_glyphs.h"
+#include "safehouse/skipcut.h"
 #include <safehouse/controller_family.h>
 #include <safehouse/gamepad_mappings.h>
 #include <safehouse/pad_rumble.h>
@@ -686,9 +687,17 @@ void JOY::Update(GLFWwindow* window)
     const bool fFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE;
     // The rhythm minigame's own keys (actionbind.h RhythmKeysLive): its buttons while it plays, nothing else on them.
     const bool fRhythmKeys = this == &g_joy && sly1actions::RhythmKeysLive(fMenu);
+    // The cutscene / conversation skip's own key and pad button (pcinput.h g_skipKeyBinding / g_skipPadBinding): while a
+    // scene can be skipped (or the skip's input is still held from a skip) they only skip: no PS2 button of theirs is
+    // pressed (Enter is no Start, R1 opens no binocucom). skipcut.h reads them.
+    const bool fSkipCaptured = this == &g_joy && FShSkipInputCaptured();
+    const int keySkipMasked = fSkipCaptured ? g_skipKeyBinding : GLFW_KEY_UNKNOWN;
+    const int padSkipMasked = fSkipCaptured ? g_skipPadBinding : -1;
     for (int button = 0; button < BTN_MAX; ++button)
     {
         const int key = g_keyboardBindings[button];
+        if (key != GLFW_KEY_UNKNOWN && key == keySkipMasked)
+            continue;
         // In a menu with the mouse in menus on, the left / right buttons only choose / go back there: an action
         // bound to them is not sent.
         if (fMenu && g_mouseopt.fMenus &&
@@ -758,6 +767,13 @@ void JOY::Update(GLFWwindow* window)
         for (int button = 0; button < BTN_MAX; ++button)
         {
             const int binding = g_gamepadBindings[button];
+            if (binding >= 0 && binding == padSkipMasked)
+                continue;
+#if defined(__ANDROID__) || defined(CANE_IOS)
+            // (the on-screen pad's hold during a scene, its B, is the skip there: touch.cpp)
+            if (fSkipCaptured && activeJoystickId == GLFW_JOYSTICK_LAST && binding == GLFW_GAMEPAD_BUTTON_B)
+                continue;
+#endif
             bool held = false;
             if (binding >= 0 && binding <= GLFW_GAMEPAD_BUTTON_LAST)
                 held = state.buttons[binding] == GLFW_PRESS;
@@ -786,9 +802,33 @@ void JOY::Update(GLFWwindow* window)
     // Advanced Input Mapping (actionbind.h): the buttons from every action's own binding in the current context.
     if (sly1actions::Active())
     {
-        sly1actions::HeldButtons(window, haveGamepadState ? &state : nullptr, fMenu && g_mouseopt.fMenus, fRhythmKeys, current);
+        sly1actions::HeldButtons(window, haveGamepadState ? &state : nullptr, fMenu && g_mouseopt.fMenus, fRhythmKeys,
+            keySkipMasked, padSkipMasked, current);
         if (fFocused && FKeyHeld(window, GLFW_KEY_ESCAPE))
             current[BTN_START] = true;
+    }
+
+    // The skip's input this update (skipcut.h).
+    if (this == &g_joy)
+    {
+        bool fSkip = false;
+        if (g_skipKeyBinding != GLFW_KEY_UNKNOWN)
+            fSkip = FMouseBinding(g_skipKeyBinding) ? FMouseBindingHeld(g_skipKeyBinding) : FKeyHeld(window, g_skipKeyBinding);
+        if (haveGamepadState)
+        {
+            const int binding = g_skipPadBinding;
+            if (binding >= 0 && binding <= GLFW_GAMEPAD_BUTTON_LAST)
+                fSkip = fSkip || state.buttons[binding] == GLFW_PRESS;
+            else if (binding == GAMEPAD_BINDING_LEFT_TRIGGER)
+                fSkip = fSkip || state.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER] > 0.25f;
+            else if (binding == GAMEPAD_BINDING_RIGHT_TRIGGER)
+                fSkip = fSkip || state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER] > 0.25f;
+#if defined(__ANDROID__) || defined(CANE_IOS)
+            if (activeJoystickId == GLFW_JOYSTICK_LAST && FShSkipSceneLive())
+                fSkip = fSkip || state.buttons[GLFW_GAMEPAD_BUTTON_B] == GLFW_PRESS;
+#endif
+        }
+        ShSetSkipInput(fSkip);
     }
 
     // Switching pads stops the old one's motors.

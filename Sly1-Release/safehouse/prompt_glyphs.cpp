@@ -172,8 +172,61 @@ Button PromptButtonForGlyph(char ch)
     return cane::input::fromGlfwBinding(sly1actions::BindingForButton(button, true));
 }
 
+namespace
+{
+// The skip's glyph (prompt_glyphs.h PROMPTGLYPH_SKIP): always resolved to a real glyph of the font (the original glyph of
+// the bound controller button, R1's without one), so its cell's width is a glyph's.
+PROMPTGLYPH PromptGlyphSkip()
+{
+    const Button button = cane::input::fromGlfwBinding(g_skipPadBinding);
+    const char chPad = button != Button::Count ? cane::input::psGlyphFor(button) : '\0';
+    PROMPTGLYPH glyph;
+    glyph.kind = PROMPTGLYPH::Glyph;
+    glyph.ch = chPad != '\0' ? chPad : 'R';
+    if (!PromptSubstituteActive())
+        return glyph;
+    const Family family = PromptFamily();
+    const auto& atlas = cane::input::promptAtlas();
+    if (family == Family::Keyboard)
+    {
+        if (g_skipKeyBinding == GLFW_KEY_UNKNOWN || atlas.keyboardTexture() == 0)
+            return glyph;
+        const cane::input::IconUV uv = atlas.keyUV(cane::input::promptKeyForBinding(g_skipKeyBinding));
+        if (!uv.valid)
+            return glyph;
+        glyph.kind = PROMPTGLYPH::Icon;
+        glyph.ch = '!';   // (a wide cell, as Start's: a keycap such as Enter's)
+        glyph.texture = atlas.keyboardTexture();
+        glyph.u0 = uv.u0, glyph.v0 = uv.v0, glyph.u1 = uv.u1, glyph.v1 = uv.v1;
+        return glyph;
+    }
+    if (button == Button::Count || family == Family::PlayStation)
+        return glyph;
+    const GLuint texture = atlas.texture(family);
+    const cane::input::IconUV uv = atlas.uv(family, button);
+    if (texture == 0 || !uv.valid)
+        return glyph;
+    glyph.kind = PROMPTGLYPH::Icon;
+    glyph.texture = texture;
+    glyph.u0 = uv.u0, glyph.v0 = uv.v0, glyph.u1 = uv.u1, glyph.v1 = uv.v1;
+    return glyph;
+}
+}
+
+std::string PromptSkipLabel()
+{
+    if (PromptKeyboardActive() && g_skipKeyBinding != GLFW_KEY_UNKNOWN)
+        return KeyLabel(g_skipKeyBinding);
+    const Button button = cane::input::fromGlfwBinding(g_skipPadBinding);
+    if (button == Button::Count)
+        return g_skipKeyBinding != GLFW_KEY_UNKNOWN ? KeyLabel(g_skipKeyBinding) : std::string("R1");
+    return cane::input::buttonLabel(button, PromptSubstituteActive() ? PromptFamily() : Family::PlayStation);
+}
+
 PROMPTGLYPH PromptGlyphFor(char ch)
 {
+    if (ch == PROMPTGLYPH_SKIP)
+        return PromptGlyphSkip();
     PROMPTGLYPH glyph;
     glyph.ch = ch;
     if (!PromptSubstituteActive())
