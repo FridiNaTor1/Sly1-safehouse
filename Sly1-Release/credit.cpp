@@ -10,7 +10,7 @@ namespace
 {
 const char* BonusCommentaryPrompt()
 {
-    if (FLocalizedContent())
+    if (FLocalizedText())
     {
         if (const char* localized = ContentLocalizedText(170))
             return localized;
@@ -213,7 +213,7 @@ void SetNoteMtsState(NOTE* pnote, MTSSTATE mtsState)
         if ((g_plsCur->grfls & FLS_Tertiary) == 0)
         {
             SetBlotDtVisible(pnote, 5.0f);
-            const char* sprintText = FLocalizedContent() ? ContentLocalizedText(169) : nullptr;
+            const char* sprintText = FLocalizedText() ? ContentLocalizedText(169) : nullptr;
             const char* fallbackSprint = FJapaneseContent()
                 ? "マスターシーフ・スプリント開始！" : s_pchzCommentaryTimer;
             pnote->pvtblot->pfnSetBlotAchzDraw(pnote,
@@ -222,7 +222,7 @@ void SetNoteMtsState(NOTE* pnote, MTSSTATE mtsState)
         else
         {
             const float dtBest = g_plsCur->dtTimedBest;
-            const char* bestTime = FLocalizedContent() ? ContentLocalizedText(171) : nullptr;
+            const char* bestTime = FLocalizedText() ? ContentLocalizedText(171) : nullptr;
             if (bestTime == nullptr)
                 bestTime = FJapaneseContent() ? "ベストタイム:" : "Best time:";
 
@@ -428,6 +428,17 @@ void PostCreditLoad(CREDIT* pcredit)
 {
     PostBlotLoad(pcredit);
 
+    // Credits draw with the text font at a 0.8 base scale. Give them their own
+    // copy of it: writing 0.8 into the shared font (g_pfont) also shrank every
+    // other text that uses it, the pause menu and the other prompts included,
+    // to 80% of the PS2 size once a level had loaded.
+    static CFontBrx s_fontCredit;
+    if (pcredit->pfont != nullptr && pcredit->pfont != &s_fontCredit)
+        pcredit->pfont->CopyTo(&s_fontCredit);
+    s_fontCredit.m_rxScale = 0.8f;
+    s_fontCredit.m_ryScale = 0.8f;
+    pcredit->pfont = &s_fontCredit;
+
     for (int i = 0; i < 4; i++)
     {
         NOTE* const pnote = &pcredit->anote[i];
@@ -439,8 +450,7 @@ void PostCreditLoad(CREDIT* pcredit)
         // a second time. Preserve the existing Modern presentation.
         if (!FModernGui())
             pnote->rFontScale = 1.0f;
-        pnote->pfont->m_rxScale = 0.8f;
-        pnote->pfont->m_ryScale = 0.8f;
+        pnote->pfont = &s_fontCredit;
 
         SetBlotDtAppear(pnote, 1.0f);
         SetBlotDtDisappear(pnote, 1.0f);

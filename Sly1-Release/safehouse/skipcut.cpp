@@ -129,8 +129,10 @@ void DrawHint(const SKIPCUT& s)
 	CFontBrx* pfont = g_pfont;
 	const bool fIcons = FFontLoaded(1);
 	const float scale = g_gl.uiScale * 0.45f;
+	// (the text at the size it was tuned at: the font's base scale was 0.8 then, the credits left it in the shared font)
+	const float textScale = scale * 0.8f;
 
-	pfont->PushScaling(scale, scale);
+	pfont->PushScaling(textScale, textScale);
 	const float dy = static_cast<float>(pfont->m_dyUnscaled) * pfont->m_ryScale;
 	CRichText text(HintText(fIcons), pfont);
 	const float dx = text.Dx();
@@ -157,7 +159,7 @@ void DrawHint(const SKIPCUT& s)
 	if (s.tHold > 0.0f && fIcons && !FInstant())
 	{
 		// the ring: the Circle icon, a line circling it as the hold fills
-		const float big = scale * 1.6f;
+		const float big = textScale * 1.6f;
 		pfont->PushScaling(big, big);
 		const float dyIcon = static_cast<float>(pfont->m_dyUnscaled) * pfont->m_ryScale;
 		CRichText icon("&2O&.", pfont);
