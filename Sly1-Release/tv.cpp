@@ -28,7 +28,43 @@ static float TvUiScale()
     return glm::min(sx, sy);
 }
 
-static void SetTvCameraFov(CM* pcm, float radFov, float aspect)
+// The portrait is drawn as it is on a 4:3 picture of the same UI scale (the original's layout, and this port's 4:3
+// picture exactly), then moved with its window: on a wider picture the window keeps its size (TvUiScale follows the
+// height), so the reference picture has the same height and a 4:3 width, the window at its 4:3 place in it. Without
+// this the speaker's screen anchor and the projection followed the real picture's width: the face grew and was cut
+// off more the wider the picture (and moved when the window moved out toward the edges).
+struct TVREF
+{
+    float dxRef;  // the reference picture's size in output pixels
+    float dyRef;
+    float dxMove; // the window's offset from its place in the reference picture
+    float dyMove;
+};
+
+static TVREF TvRefFrame(const TV* ptv)
+{
+    const float width = static_cast<float>(g_gl.width);
+    const float height = static_cast<float>(g_gl.height);
+    const float uiScale = TvUiScale();
+
+    TVREF ref{};
+    // (exactly the real picture at 4:3: same arithmetic, no rounding drift)
+    ref.dyRef = (uiScale == height / 492.8f) ? height : 492.8f * uiScale;
+    ref.dxRef = ref.dyRef * 4.0f / 3.0f;
+    if (width * 3.0f == height * 4.0f)
+        ref.dxRef = width, ref.dyRef = height;
+
+    // The window's resting place in the reference picture (RepositionBlot's rules for its edge hints) and in the
+    // real one (xOn / yOn: during the slide in and out the portrait still follows ptv->x / ptv->y below).
+    const BLOTI* bloti = ptv->pbloti;
+    const float xRef = bloti->x > 0.0f ? bloti->x : ref.dxRef + bloti->x - ptv->dx;
+    const float yRef = bloti->y > 0.0f ? bloti->y : ref.dyRef + bloti->y - ptv->dy;
+    ref.dxMove = ptv->xOn - xRef;
+    ref.dyMove = ptv->yOn - yRef;
+    return ref;
+}
+
+static void SetTvCameraFov(CM* pcm, float radFov, float aspect, const TVREF* pref = nullptr)
 {
     const float tvAspect = std::max(aspect, 0.0001f);
 
@@ -41,6 +77,27 @@ static void SetTvCameraFov(CM* pcm, float radFov, float aspect)
 
     BuildProjectionMatrix(radFov, tvAspect, pcm->sNearClip,
         pcm->sFarClip, pcm->matProj);
+
+    if (pref != nullptr)
+    {
+        // Reference-picture clip space -> the real picture's: scale by the size ratio and move by the window's
+        // offset (pixels, top-left origin, Y down; NDC Y up). The identity on a 4:3 picture.
+        const float width = static_cast<float>(g_gl.width);
+        const float height = static_cast<float>(g_gl.height);
+        const float sx = pref->dxRef / width;
+        const float sy = pref->dyRef / height;
+        const float tx = (pref->dxRef + 2.0f * pref->dxMove) / width - 1.0f;
+        const float ty = 1.0f - sy - 2.0f * pref->dyMove / height;
+        if (sx != 1.0f || sy != 1.0f || tx != 0.0f || ty != 0.0f)
+        {
+            glm::mat4 matPlace(1.0f);
+            matPlace[0][0] = sx;
+            matPlace[1][1] = sy;
+            matPlace[3][0] = tx;
+            matPlace[3][1] = ty;
+            pcm->matProj = matPlace * pcm->matProj;
+        }
+    }
     UpdateCmMat4(pcm);
 }
 
@@ -474,13 +531,20 @@ void RenderTv(TV* ptv)
 
     SPEAKER* pspeaker = ptv->pspeakerDraw;
 
+    // The anchor in the 4:3 reference picture (TvRefFrame); PreTvContext's projection moves it back to the window.
+    TVREF ref{ static_cast<float>(g_gl.width), static_cast<float>(g_gl.height), 0.0f, 0.0f };
+    if (g_binoc.binocs != BINOCS_Confront)
+        ref = TvRefFrame(ptv);
+    const float xWindow = ptv->x - ref.dxMove;
+    const float yWindow = ptv->y - ref.dyMove;
+
     glm::vec3 posScreen;
-    const float xTv = (1.0f - pspeaker->uxTv) * ptv->x + pspeaker->uxTv * (ptv->x + ptv->dx);
-    const float yTv = (1.0f - pspeaker->uyTv) * ptv->y + pspeaker->uyTv * (ptv->y + ptv->dy);
+    const float xTv = (1.0f - pspeaker->uxTv) * xWindow + pspeaker->uxTv * (xWindow + ptv->dx);
+    const float yTv = (1.0f - pspeaker->uyTv) * yWindow + pspeaker->uyTv * (yWindow + ptv->dy);
 
     // BLOT anchoring is resolved in native render-target coordinates.
-    posScreen.x = xTv * (2.0f / static_cast<float>(g_gl.width)) - 1.0f;
-    posScreen.y = 1.0f - yTv * (2.0f / static_cast<float>(g_gl.height));
+    posScreen.x = xTv * (2.0f / ref.dxRef) - 1.0f;
+    posScreen.y = 1.0f - yTv * (2.0f / ref.dyRef);
     posScreen.z = pspeaker->sDistCm;
 
     glm::vec3 posWorld;
@@ -679,9 +743,10 @@ void PreTvContext(RPL* prpl)
     s_svTvFovSaved = g_pcm->svRadFOV;
     s_fTvCameraSaved = true;
 
-    // Keep the authored projection so the screen-space anchor remains fixed.
-    // RenderTv compensates the model's local X scale for the host aspect.
-    SetTvCameraFov(g_pcm, ptv->pspeakerDraw->radFov, 1280.0f / 720.0f);
+    // Keep the authored projection so the screen-space anchor remains fixed,
+    // drawn as on the 4:3 reference picture and moved to the window (TvRefFrame).
+    const TVREF ref = TvRefFrame(ptv);
+    SetTvCameraFov(g_pcm, ptv->pspeakerDraw->radFov, 1280.0f / 720.0f, &ref);
     glBindBuffer(GL_UNIFORM_BUFFER, cmUBO);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(CMGL), &g_pcm->matWorldToClip);
 
