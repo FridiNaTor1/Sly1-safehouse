@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 struct BMP;
@@ -19,6 +20,11 @@ inline void ReportTextureMods() {}
 
 // --dump-textures DIR: write every texture the game loads to DIR (files already there are kept).
 void SetTextureDumpDirectory(const std::filesystem::path& directory);
+// --dump-textures DIR LEVEL: the game goes straight to LEVEL (its folder name, e.g. "A Stealthy Approach", or its id in
+// hex, e.g. 103), writes the textures it loaded and quits. Called with the level's name or id from the command line.
+void SetTextureDumpLevel(const std::string& level);
+// main.cpp, once a frame after the world's update: drives --dump-textures DIR LEVEL (the warp, then the quit).
+void ShUpdateTextureDump();
 // --texture-pack DIR: a texture pack (DIR/Textures.pak, else DIR/Textures; the same names) under the Mods folder's own
 // textures, which win. The launcher passes the PS3 HD pack this way while it is turned on (ps3hd.cpp).
 void SetTexturePackDirectory(const std::filesystem::path& directory);

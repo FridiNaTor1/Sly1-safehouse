@@ -152,7 +152,12 @@ void TakeModArguments(std::vector<std::string>& args)
         };
         if (option == "--mods") { s_modsOption = value(); s_modsGiven = true; }
         else if (option == "--texture-pack") SetTexturePackDirectory(cane::path(value()));
-        else if (option == "--dump-textures") s_dumpTextures = cane::path(value());
+        else if (option == "--dump-textures")
+        {
+            s_dumpTextures = cane::path(value());
+            // (an optional level: --dump-textures DIR LEVEL)
+            if (i + 1 < args.size() && args[i + 1].rfind("--", 0) != 0) SetTextureDumpLevel(args[++i]);
+        }
         else if (option == "--dump-text") s_dumpText = cane::path(value());
         else if (option == "--ps3-hd-textures")
         {

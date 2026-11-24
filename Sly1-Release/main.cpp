@@ -15,6 +15,7 @@
 #include "blip.h"
 #include "content.h"
 #include "safehouse/mods.h"
+#include "safehouse/texmod.h"
 #include "safehouse/musmod.h"
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/prompt_glyphs.h"
@@ -280,6 +281,7 @@ void RunGameFrame()
         UpdateSw(g_psw, g_clock.dt);
 #if defined(CANE_SAFEHOUSE)
         ShUpdateDebugTools();   // (the debug menu's actions, noclip, infinite health)
+        ShUpdateTextureDump();   // (--dump-textures DIR LEVEL, safehouse/texmod.h)
 #endif
 
         if (g_fRenderModels == true)

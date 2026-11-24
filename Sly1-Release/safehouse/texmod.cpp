@@ -3,6 +3,11 @@
 
 #include "mods.h"
 #include "../shd.h"
+#include "../game.h"
+#include "../gl.h"
+#include "../sw.h"
+#include "../transition.h"
+#include "../wipe.h"
 #include "../../platform/platform.h"
 
 #define STB_IMAGE_STATIC
@@ -240,6 +245,58 @@ std::string TextureModName(const std::vector<uint8_t>& rgba, uint32_t width, uin
     return TextureName(rgba, width, height);
 }
 
+namespace
+{
+std::string s_dumpLevel;
+int s_cframeDumpLevel = -1;   // (frames drawn in the level; -1 before it)
+bool s_fDumpHeld = false;     // (--dump-textures DIR LEVEL: the worlds before LEVEL are not dumped)
+}
+
+void SetTextureDumpLevel(const std::string& level)
+{
+    s_dumpLevel = level;
+    s_fDumpHeld = true;
+}
+
+void ShUpdateTextureDump()
+{
+    if (s_dumpLevel.empty() || g_psw == nullptr)
+        return;
+    LEVELINFO* plevel = PlevelinfoFromLevelName(s_dumpLevel);
+    if (plevel == nullptr)
+    {
+        char* pchEnd = nullptr;
+        const long levelId = std::strtol(s_dumpLevel.c_str(), &pchEnd, 16);
+        if (pchEnd != nullptr && *pchEnd == '\0')
+            plevel = PlevelInfoFromId(static_cast<int>(levelId));
+    }
+    if (plevel == nullptr)
+    {
+        std::fprintf(stderr, "--dump-textures: no level %s (a level's folder name, or its id in hex)\n", s_dumpLevel.c_str());
+        s_dumpLevel.clear();
+        glfwSetWindowShouldClose(g_gl.window, GLFW_TRUE);
+        return;
+    }
+    if (g_transition.m_fPending || g_wipe.wipes != WIPES_Idle)
+        return;
+    if (g_transition.m_plevelCurrent != plevel)
+    {
+        if (s_cframeDumpLevel < 0)
+        {
+            s_cframeDumpLevel = 0;
+            s_fDumpHeld = false;
+            WipeToWorldWarp(plevel, OID_Nil, WIPEK_Fade);
+        }
+        return;
+    }
+    // (a second of the level drawn: what loads with the level is all written by then)
+    if (++s_cframeDumpLevel == 60)
+    {
+        std::printf("textures: %s dumped to %s\n", PchzFriendlyFromLevelId(plevel->levelID), cane::utf8(s_dumpDirectory).c_str());
+        glfwSetWindowShouldClose(g_gl.window, GLFW_TRUE);
+    }
+}
+
 void SetTextureDumpDirectory(const fs::path& directory)
 {
     s_dumpDirectory = directory;
@@ -261,7 +318,7 @@ bool FTextureReplacement(const BMP& image, std::vector<uint8_t>& rgba, uint32_t&
     const uint32_t w = image.bmpWidth, h = image.bmpHeight;
     const std::string name = TextureName(original, w, h);
 
-    if (!s_dumpDirectory.empty())
+    if (!s_dumpDirectory.empty() && !s_fDumpHeld)
     {
         const fs::path path = s_dumpDirectory / name;
         std::error_code error;
