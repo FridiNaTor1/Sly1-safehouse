@@ -337,7 +337,7 @@ void RepositionBlot(BLOT* pblot)
     float right = HudRight();
     if (pblot->blotk == BLOTK_TvLeft || pblot->blotk == BLOTK_TvRight)
     {
-        // (the binocucom's talk windows: the HUD box, at most 16:10 wide, safehouse/hudbox.h)
+        // (the binocucom's talk windows: the picture, at most 2.4:1 wide, safehouse/hudbox.h TvBoxWidth)
         left = TvBoxLeft();
         right = TvBoxRight();
     }

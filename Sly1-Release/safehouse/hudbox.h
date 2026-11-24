@@ -49,9 +49,11 @@ inline float HudRight() { return HudLeft() + HudBoxWidth(); }
 
 // The binocucom's talk windows (the TV portraits, Bentley left and Sly right): the original puts them at the 4:3
 // picture's edges. On wider pictures they move out with the picture, whatever the HUD Placement, but never past a
-// centred 16:9 box (wider, the faces would sit far from the text between them): at 4:3 unchanged, at 16:10 (the
-// Steam Deck's screen) and 16:9 out at the edges like the original's 4:3, wider (21:9, 32:9) at the 16:9 box's edges.
-inline float TvBoxWidth() { return (std::min)(static_cast<float>(g_gl.width), g_gl.height * (16.0f / 9.0f)); }
+// centred 2.4:1 box (wider, the faces would sit far from the text between them): at 4:3 unchanged, from 16:10 (the
+// Steam Deck's screen) through 16:9 to the common 21:9 monitors (2560x1080 2.37, 3440x1440 2.39, 3840x1600 2.4) out at
+// the edges like the original's 4:3, wider (32:9) at the 2.4:1 box's edges.
+inline constexpr float kTvBoxAspectMax = 2.4f;
+inline float TvBoxWidth() { return (std::min)(static_cast<float>(g_gl.width), g_gl.height * kTvBoxAspectMax); }
 inline float TvBoxLeft() { return (g_gl.width - TvBoxWidth()) * 0.5f; }
 inline float TvBoxRight() { return TvBoxLeft() + TvBoxWidth(); }
 // How far the left talk window (and the talk text beside it) moved out from its place in the 4:3 box.
