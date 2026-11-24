@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -70,12 +71,79 @@ std::string StrIconStyle()
     return cane::input::promptStyleName(g_promptStyle);
 }
 
+// The actions' names in the game's languages (English, French, German, Spanish, Italian), in kActions' order.
+const char* const s_aszAction[][5] = {
+    { "Move forward", "Avancer", "Vorwärts", "Avanzar", "Avanti" },
+    { "Move backward", "Reculer", "Rückwärts", "Retroceder", "Indietro" },
+    { "Move left", "Aller à gauche", "Nach links", "Ir a la izquierda", "Sinistra" },
+    { "Move right", "Aller à droite", "Nach rechts", "Ir a la derecha", "Destra" },
+    { "Jump", "Sauter", "Springen", "Saltar", "Salta" },
+    { "Attack", "Attaquer", "Angreifen", "Atacar", "Attacca" },
+    { "Action (sneak, grab, use)", "Action (discrétion, saisir, utiliser)", "Aktion (schleichen, greifen, benutzen)",
+      "Acción (sigilo, agarrar, usar)", "Azione (furtività, afferra, usa)" },
+    { "Use power-up", "Utiliser la technique", "Fähigkeit einsetzen", "Usar habilidad", "Usa abilità" },
+    { "Previous power-up", "Technique précédente", "Vorherige Fähigkeit", "Habilidad anterior", "Abilità precedente" },
+    { "Next power-up", "Technique suivante", "Nächste Fähigkeit", "Habilidad siguiente", "Abilità successiva" },
+    { "Talk to Bentley (binocucom)", "Parler à Bentley (binocucom)", "Mit Bentley sprechen (Binocucom)",
+      "Hablar con Bentley (binocucom)", "Parla con Bentley (binocucom)" },
+    { "Skip dialogue", "Passer le dialogue", "Dialog überspringen", "Saltar diálogo", "Salta il dialogo" },
+    { "Centre the camera", "Centrer la caméra", "Kamera zentrieren", "Centrar la cámara", "Centra la telecamera" },
+    { "L3", "L3", "L3", "L3", "L3" },
+    { "Pause", "Pause", "Pause", "Pausa", "Pausa" },
+    { "Map", "Carte", "Karte", "Mapa", "Mappa" },
+    { "Turret: fire", "Tourelle : tirer", "Geschütz: feuern", "Torreta: disparar", "Torretta: spara" },
+    { "Turret: fire (second button)", "Tourelle : tirer (2e bouton)", "Geschütz: feuern (2. Taste)",
+      "Torreta: disparar (segundo botón)", "Torretta: spara (secondo tasto)" },
+    { "Murray's van: attack", "Camionnette de Murray : attaquer", "Murrays Van: angreifen", "Furgoneta de Murray: atacar",
+      "Furgone di Murray: attacca" },
+    { "Tank: get out", "Char : sortir", "Panzer: aussteigen", "Tanque: salir", "Carro armato: esci" },
+    { "Puffer: fire", "Puffer : tirer", "Puffer: feuern", "Puffer: disparar", "Puffer: spara" },
+    { "Puffer: fire (second button)", "Puffer : tirer (2e bouton)", "Puffer: feuern (2. Taste)",
+      "Puffer: disparar (segundo botón)", "Puffer: spara (secondo tasto)" },
+    { "Jetpack: thrust", "Jetpack : propulsion", "Jetpack: Schub", "Jetpack: propulsión", "Jetpack: spinta" },
+    { "Jetpack: use a lucky charm", "Jetpack : utiliser un porte-bonheur", "Jetpack: Glücksbringer einsetzen",
+      "Jetpack: usar un amuleto", "Jetpack: usa un portafortuna" },
+    { "Rhythm: Square", "Rythme : Carré", "Rhythmus: Viereck", "Ritmo: Cuadrado", "Ritmo: Quadrato" },
+    { "Rhythm: Triangle", "Rythme : Triangle", "Rhythmus: Dreieck", "Ritmo: Triángulo", "Ritmo: Triangolo" },
+    { "Rhythm: Circle", "Rythme : Rond", "Rhythmus: Kreis", "Ritmo: Círculo", "Ritmo: Cerchio" },
+    { "Rhythm: Cross", "Rythme : Croix", "Rhythmus: Kreuz", "Ritmo: Equis", "Ritmo: Croce" },
+    { "Safe: Square", "Coffre : Carré", "Tresor: Viereck", "Caja fuerte: Cuadrado", "Cassaforte: Quadrato" },
+    { "Safe: Triangle", "Coffre : Triangle", "Tresor: Dreieck", "Caja fuerte: Triángulo", "Cassaforte: Triangolo" },
+    { "Safe: Circle", "Coffre : Rond", "Tresor: Kreis", "Caja fuerte: Círculo", "Cassaforte: Cerchio" },
+    { "Safe: Cross", "Coffre : Croix", "Tresor: Kreuz", "Caja fuerte: Equis", "Cassaforte: Croce" },
+};
+static_assert(sizeof(s_aszAction) / sizeof(s_aszAction[0]) == input::kActionCount, "one line per Sly 1 action");
+
+std::string StrAction(size_t i)
+{
+    const char* const* asz = s_aszAction[i];
+    if (std::strcmp(asz[0], input::kActions[i].label) != 0)
+        return input::kActions[i].label;   // (the table is behind the actions: English)
+    return T(asz[0], asz[1], asz[2], asz[3], asz[4]);
+}
+
+std::string StrGroup(const std::string& group)
+{
+    static const char* const s_aszGroup[][5] = {
+        { "Movement", "Déplacement", "Bewegung", "Movimiento", "Movimento" },
+        { "Sly", "Sly", "Sly", "Sly", "Sly" },
+        { "Camera", "Caméra", "Kamera", "Cámara", "Telecamera" },
+        { "Menus", "Menus", "Menüs", "Menús", "Menu" },
+        { "Vehicles and minigames", "Véhicules et mini-jeux", "Fahrzeuge und Minispiele", "Vehículos y minijuegos",
+          "Veicoli e minigiochi" },
+    };
+    for (const auto& asz : s_aszGroup)
+        if (group == asz[0])
+            return T(asz[0], asz[1], asz[2], asz[3], asz[4]);
+    return group;
+}
+
 // The standard row labels: the common action on each PS2 button.
 std::string StrStandardLabel(int button)
 {
-    for (const input::ActionInfo& a : input::kActions)
-        if (a.context == input::Context::Any && a.pad == button)
-            return a.label;
+    for (size_t i = 0; i < input::kActionCount; ++i)
+        if (input::kActions[i].context == input::Context::Any && input::kActions[i].pad == button)
+            return StrAction(i);
     return "";
 }
 
@@ -102,10 +170,10 @@ std::vector<ROW> Arow()
                 groups.emplace_back(action.group);
         for (const std::string& group : groups)
         {
-            a.push_back({RK_Header, 0, group});
+            a.push_back({RK_Header, 0, StrGroup(group)});
             for (size_t i = 0; i < input::kActionCount; ++i)
                 if (group == input::kActions[i].group)
-                    a.push_back({RK_Binding, int(i), input::kActions[i].label});
+                    a.push_back({RK_Binding, int(i), StrAction(i)});
         }
     }
     else
