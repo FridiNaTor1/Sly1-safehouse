@@ -263,7 +263,11 @@ void RunGameFrame()
             UpdateSw(g_psw, g_clock.dt);
         } while (FShSkipCutStep() && g_psw != nullptr &&
             std::chrono::steady_clock::now() - tStart < std::chrono::milliseconds(25));
+        // (the pad's own input back, but not the rumble: one the steps started or stopped stays so, else its motors
+        // would run on with nothing left to stop them)
+        const RUMBLE rumble = g_joy.rumble;
         g_joy = joySaved;
+        g_joy.rumble = rumble;
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     }

@@ -16,6 +16,11 @@
 #include "../sw.h"
 #include "../transition.h"
 #include "../ui.h"
+#include "../wipe.h"
+#include "../jt.h"
+#include "../jsg.h"
+#include "../find.h"
+#include "../dec.h"
 #include "../render.h"
 #include <chrono>
 #include <cmath>
@@ -148,6 +153,8 @@ void StopFast()
 		return;
 	s_skip.fFast = false;
 	ShSetSkipCutSound(false);
+	// (a rumble a skipped scene started goes no further than the scene: the pad still at the scene's end)
+	StopJoyRumble(&g_joy);
 	if (FPrint())
 		std::printf("skipcut: over after %d steps (%.2f s of game time)\n", s_skip.cstep, g_clock.t - s_skip.tFastStart);
 }
@@ -161,6 +168,7 @@ void StartFast()
 	s_skip.tHold = 0.0f;
 	s_skip.fMaskSkip = true;
 	ShSetSkipCutSound(true);
+	StopJoyRumble(&g_joy);
 	if (FPrint())
 		std::printf("skipcut: skipping at t %.2f\n", g_clock.t);
 }
@@ -253,6 +261,36 @@ void DrawHint(const SKIPCUT& s)
 				}
 		}
 	}
+}
+}
+
+namespace
+{
+// The original's own skip of the scene is live: a press of Start now ends it, either through the scene's button
+// transition (wipe.cpp FCatchWipeButtonTrans) or by warping out of Sly's scripted moves (jt.cpp: a joystick guide
+// sequence with a warp ahead, as the opening before the title: Start wipes through the keyhole to that warp).
+bool FStartSkipLive()
+{
+	if (g_wipe.wipes != WIPES_Idle)
+		return false;
+	if (g_wipe.transButton.fSet && (g_grfusr & 2U) != 0)
+		return true;
+	JT* const pjt = g_pjt;
+	if (pjt == nullptr || pjt->jts == 4 || pjt->pjsgCur == nullptr || !FIsJsgActive(pjt->pjsgCur))
+		return false;
+	JSG* const pjsg = pjt->pjsgCur;
+	if (pjsg->ijsgeCur < 0 || pjsg->ijsgeCur >= pjsg->cjsge)
+		return false;
+	for (int ijsge = pjsg->ijsgeCur; ijsge < pjsg->cjsge; ++ijsge)
+	{
+		const JSGE& jsge = pjsg->ajsge[ijsge];
+		if (jsge.jsgek != 1)
+			continue;
+		LO* const ploWarp = PloFindSwObject(pjsg->psw, static_cast<GRFFSO>(260), static_cast<OID>(jsge.oid), pjsg->ploContext);
+		if (ploWarp != nullptr && FIsBasicDerivedFrom(ploWarp, CID_WARP))
+			return true;
+	}
+	return false;
 }
 }
 
@@ -350,6 +388,21 @@ void ShUpdateSkipCut(float dtReal)
 		if (FPrint())
 			std::printf("skipcut: conversation skipped at t %.2f\n", g_clock.t);
 		FinishDialogEvents(pdialog);
+		return;
+	}
+	// A scene the original itself ends at a press of Start (FStartSkipLive: the opening before the title, a scene with
+	// a button transition): the skip is that press, so the scene ends exactly as with Start (its wipe, the warp or
+	// transition, the music, the rumble). The game takes it later this frame (UpdateWipe / the JT's update).
+	if (FStartSkipLive())
+	{
+		s_skip.fHint = false;
+		s_skip.tHold = 0.0f;
+		s_skip.fMaskSkip = true;
+		g_joy.current[BTN_START] = true;
+		g_joy.previous[BTN_START] = false;
+		g_joy.handled[BTN_START] = false;
+		if (FPrint())
+			std::printf("skipcut: the original's Start skip at t %.2f\n", g_clock.t);
 		return;
 	}
 	StartFast();

@@ -24,7 +24,14 @@
 // also take the skip's hold (the skip's own input among those buttons, R1 by default, then follows the hold too).
 //
 // The original's own instant skip stays: a scene with a button transition (wipe.cpp FCatchWipeButtonTrans) ends at a
-// press of Start, a controller's Start or Escape (no longer Enter while it is the skip).
+// press of Start, a controller's Start or Escape (no longer Enter while it is the skip), and so does Sly's scripted run
+// with a warp ahead (jt.cpp's joystick guide sequence: the opening before the title, wiped through the keyhole). The
+// skip's hold ends such a scene the same way: it presses Start for the game, so the wipe, the warp or transition, the
+// music and the rumble go exactly as with Start, instead of fast-forwarding. A fast-forward stops the pad's rumble at
+// its start and end (the motors of one started in a skipped scene do not run on).
+//
+// On phones the on-screen pad's B (holding the screen in the cinematic layout) is the skip whenever the skip has its
+// input, movies included.
 
 // A cutscene now (the game's own state).
 bool FShCutsceneActive();
