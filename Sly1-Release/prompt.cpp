@@ -449,13 +449,73 @@ int CrespkPrompt(PRK prk, const PRD& prd)
 		: prd.crespk;
 }
 
+// The long PC menus (Video, Sound, Controls, the mapping pages) show as many rows as fit in about 92% of the screen's
+// height at the current GUI Style / Scale (the box stays centred with a small margin above and below; never fewer rows
+// than the 10 (mapping pages 9) these menus showed before), and scroll through the rest. Measured with the prompt (SetPromptPrk, again whenever an option changes) and kept, so the rows drawn always
+// match the box's size.
+int s_acrespkVisible[PRK_Max]{};
+
+bool FScrollingPrompt(PRK prk)
+{
+	return FMappingPrompt(prk) || prk == PRK_VideoMenu || prk == PRK_ControlsMenu || prk == PRK_SoundMenu;
+}
+
+int MeasureVisiblePromptResponseCount(PRK prk, int responseCount, float lineHeight, float titleHeight)
+{
+	int visible = responseCount;
+	if (FScrollingPrompt(prk) && lineHeight > 0.0f)
+	{
+		const float scaleY = GetGuiScale().y;
+		const float canvasHeight = scaleY > 0.0f ? static_cast<float>(g_gl.height) / scaleY : 448.0f;
+		const float rows = (canvasHeight * 0.92f - titleHeight) / lineHeight;
+		visible = std::min(responseCount, std::max(static_cast<int>(rows), FMappingPrompt(prk) ? 9 : 10));
+	}
+	if (prk >= 0 && prk < PRK_Max)
+		s_acrespkVisible[prk] = visible;
+	return visible;
+}
+
 int VisiblePromptResponseCount(PRK prk, int responseCount)
 {
-	if (FMappingPrompt(prk))
-		return std::min(responseCount, 9);
-	if (prk == PRK_VideoMenu || prk == PRK_ControlsMenu)
-		return std::min(responseCount, 10);
-	return responseCount;
+	if (!FScrollingPrompt(prk) || prk < 0 || prk >= PRK_Max || s_acrespkVisible[prk] <= 0)
+		return responseCount;
+	return std::min(responseCount, s_acrespkVisible[prk]);
+}
+
+// The scrolled view of a long menu: its first row, kept between frames. The view moves only as far as needed to keep
+// the selection inside it: a row of context above and below for the pad, keyboard and wheel, none for the mouse (the
+// row under the pointer is already in view, so hovering never scrolls by itself; the edge rows scroll one row at a time
+// after a pause: UpdatePromptActive).
+PRK s_prkScroll = PRK_Nil;
+int s_irespkScrollFirst = 0;
+int s_crespkScrollVisible = 0;
+bool s_fScrollByMouse = false;
+float s_tScrollEdge = -1.0f;      // the pointer has rested on an edge row since (-1: not on one)
+float s_tScrollEdgeStep = -1.0f;  // the edge's last step
+
+int FirstVisiblePromptResponse(PRK prk, int selection, int responseCount, int visible)
+{
+	if (visible >= responseCount)
+	{
+		s_prkScroll = prk, s_irespkScrollFirst = 0, s_crespkScrollVisible = responseCount;
+		return 0;
+	}
+	const int maxFirst = responseCount - visible;
+	if (prk != s_prkScroll)
+	{
+		s_prkScroll = prk;
+		s_irespkScrollFirst = selection - visible / 2;
+	}
+	const int margin = s_fScrollByMouse ? 0 : std::min(1, (visible - 1) / 2);
+	int first = s_irespkScrollFirst;
+	if (selection - margin < first)
+		first = selection - margin;
+	if (selection + margin > first + visible - 1)
+		first = selection + margin - (visible - 1);
+	first = std::clamp(first, 0, maxFirst);
+	s_irespkScrollFirst = first;
+	s_crespkScrollVisible = visible;
+	return first;
 }
 
 GLFWmonitor* ActiveMonitor()
@@ -1196,7 +1256,7 @@ void SetPromptPrk(PROMPT* pprompt)
     pprompt->pfont->PushScaling(prd.rScaleRespk, prd.rScaleRespk);
 
     const float lineHeight = static_cast<float>(pprompt->pfont->m_dyUnscaled) * pprompt->pfont->m_ryScale;
-    const int visibleResponseCount = VisiblePromptResponseCount(prk, promptResponseCount);
+    const int visibleResponseCount = MeasureVisiblePromptResponseCount(prk, promptResponseCount, lineHeight, titleHeight);
     float responseHeight = prd.fVertical != 0 ? lineHeight * static_cast<float>(visibleResponseCount) : lineHeight;
 
     if (promptResponseCount == 0)
@@ -2561,6 +2621,26 @@ void UpdatePromptActive(PROMPT* pprompt, JOY* pjoy)
         if (iHover >= 0 && iHover < promptResponseCount && iHover != pprompt->irespk && FMouseMenuMoved())
         {
             pprompt->irespk = iHover;
+            s_fScrollByMouse = true;
+            StartSound(static_cast<SFXID>(121), nullptr, nullptr, nullptr, 3000.0f, 300.0f, 1.0f, 0.0f, 0.0f, nullptr, nullptr);
+        }
+        // A scrolled menu's first or last row under the pointer, with more rows beyond it: after 0.6 seconds there the
+        // view moves one row (the selection with it, staying under the pointer), then a row every 0.35 seconds while the
+        // pointer stays on that edge row.
+        const bool scrolled = FScrollingPrompt(prk) && s_prkScroll == prk && s_crespkScrollVisible < promptResponseCount;
+        const int edge = !scrolled || iHover < 0 || iHover != pprompt->irespk ? 0
+            : iHover == s_irespkScrollFirst && s_irespkScrollFirst > 0 ? -1
+            : iHover == s_irespkScrollFirst + s_crespkScrollVisible - 1 && iHover < promptResponseCount - 1 ? 1 : 0;
+        if (edge == 0)
+            s_tScrollEdge = -1.0f;
+        else if (s_tScrollEdge < 0.0f)
+            s_tScrollEdge = g_clock.tReal, s_tScrollEdgeStep = -1.0f;
+        else if (g_clock.tReal - s_tScrollEdge >= 0.6f && (s_tScrollEdgeStep < 0.0f || g_clock.tReal - s_tScrollEdgeStep >= 0.35f))
+        {
+            s_tScrollEdgeStep = g_clock.tReal;
+            s_irespkScrollFirst += edge;
+            pprompt->irespk += edge;
+            s_fScrollByMouse = true;
             StartSound(static_cast<SFXID>(121), nullptr, nullptr, nullptr, 3000.0f, 300.0f, 1.0f, 0.0f, 0.0f, nullptr, nullptr);
         }
         if (canAcceptInput && FMouseLeftPressed() && iHover >= 0 && iHover < promptResponseCount)
@@ -2570,11 +2650,17 @@ void UpdatePromptActive(PROMPT* pprompt, JOY* pjoy)
             ExecutePrompt(pprompt);
             return;
         }
+        // The wheel: one row per notch, stopping at the first and last rows (no wrap, so a flick never jumps across)
         const int wheel = MouseWheelNotches();
         if (wheel != 0 && promptData.fVertical != 0)
         {
-            pprompt->irespk = (pprompt->irespk + (wheel > 0 ? promptResponseCount - 1 : 1)) % promptResponseCount;
-            StartSound(static_cast<SFXID>(121), nullptr, nullptr, nullptr, 3000.0f, 300.0f, 1.0f, 0.0f, 0.0f, nullptr, nullptr);
+            const int next = std::clamp(pprompt->irespk + (wheel > 0 ? -1 : 1), 0, promptResponseCount - 1);
+            if (next != pprompt->irespk)
+            {
+                pprompt->irespk = next;
+                s_fScrollByMouse = false;
+                StartSound(static_cast<SFXID>(121), nullptr, nullptr, nullptr, 3000.0f, 300.0f, 1.0f, 0.0f, 0.0f, nullptr, nullptr);
+            }
             return;
         }
     }
@@ -2589,6 +2675,9 @@ void UpdatePromptActive(PROMPT* pprompt, JOY* pjoy)
     if (promptResponseCount > 0)
     {
         const int selectionDelta = promptData.fVertical != 0 ? pjoy->DySelectionJoy(g_clock.tReal) : pjoy->DxSelectionJoy(g_clock.tReal);
+
+        if (selectionDelta != 0)
+            s_fScrollByMouse = false;
 
         if (selectionDelta > 0)
         {
@@ -2913,10 +3002,9 @@ void DrawPrompt(PROMPT* pprompt)
     int firstResponse = 0;
     int lastResponse = promptResponseCount;
     const int visibleResponses = VisiblePromptResponseCount(pprompt->prk, promptResponseCount);
-    if (visibleResponses < promptResponseCount)
+    if (FScrollingPrompt(pprompt->prk))
     {
-        firstResponse = std::clamp(pprompt->irespk - visibleResponses / 2,
-            0, std::max(0, promptResponseCount - visibleResponses));
+        firstResponse = FirstVisiblePromptResponse(pprompt->prk, pprompt->irespk, promptResponseCount, visibleResponses);
         lastResponse = std::min(promptResponseCount, firstResponse + visibleResponses);
     }
 
