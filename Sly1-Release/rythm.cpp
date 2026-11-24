@@ -5,6 +5,7 @@
 #include "sm.h"
 #include "sw.h"
 #include "xform.h"
+#include "safehouse/rhythmicons.h"
 #include <cmath>
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -124,6 +125,7 @@ void UpdateRythm(RYTHM* prythm, JOY* pjoy, float dt)
 
     if (!prythm->pruby || !pjoy)
         return;
+    ShRhythmNotesFound(prythm->pruby);   // (SafeHouse: the notes drawn as the device's buttons, rhythmicons.h)
 
     const float tRythm =
         static_cast<float>(prythm->pruby->iMeasure) * 4.0f + prythm->pruby->uBeat;
@@ -179,6 +181,7 @@ void UpdateRythm(RYTHM* prythm, JOY* pjoy, float dt)
     if (!fAccepted && tRythm - rythmMatch.time <= dtInputHalf)
         return;
 
+    ShRhythmNoteResult(rythmMatch.button, fAccepted);
     if (fAccepted) {
         static constexpr int s_aoidRythmState[4] = {0x4cc, 0x4ce, 0x4cd, 0x4cf};
         static constexpr int s_asfxidRythmSuccess[4] = {574, 576, 575, 577};

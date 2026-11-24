@@ -4,6 +4,8 @@
 //   tp=X/Y/Z        the player placed at a world position (as a warp point places it)
 //   tpoid=OID       the player placed at the first object with that OID (+ 0 0 100), e.g. a vault's button
 //   chk=N           the game's own warp to checkpoint N (1-based, the Teleport page's order)
+//   rhythmauto=1    the rhythm minigame played by the keyboard's W, A, D and Space (rhythmicons.h ShRhythmTestAuto:
+//                   through the smoke hooks' keys), each note's result logged ("rhythm: note ...")
 //   clues           every clue bottle of the level collected
 //   grfls=HEX       the level's progress flags in the save or'ed with HEX (2 key, 4 vault, 8 sprint; a warp to the
 //                   same level then loads it so)
@@ -28,6 +30,7 @@
 //                   sequencer paused, the UI state, the power-up clock rate, the music's pause volume and dialogue duck), gl (an OpenGL error left by the frame
 //                   before; a count line every 600 frames)
 #include "testaid.h"
+#include "rhythmicons.h"
 #include "../gl.h"
 #include "../alo.h"
 #include "../button.h"
@@ -146,6 +149,8 @@ bool ShTestStep(const std::string& action, const std::string& arg)
 		if (plo == nullptr) std::printf("test: no object %s\n", arg.c_str());
 		else PlacePlayer(static_cast<ALO*>(plo)->xf.posWorld + glm::vec3(0.0f, 0.0f, 100.0f));
 	}
+	else if (action == "rhythmauto")
+		ShRhythmTestAuto(arg != "0");
 	else if (action == "chk")
 	{
 		int ichk = 0;

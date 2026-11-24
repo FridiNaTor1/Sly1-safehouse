@@ -7,6 +7,7 @@
 #include "../sw.h"
 #include "../transition.h"
 #include "actionbind.h"
+#include "rhythmicons.h"
 #include <chrono>
 #include <string>
 
@@ -46,4 +47,10 @@ extern "C" const char* ShSmokeScene()
 	s_scene = "world=" + (world.empty() ? std::string("-") : world) + " ctx=" +
 		(context >= 0 && context < 8 ? s_aszContext[context] : "?");
 	return s_scene.c_str();
+}
+
+// (the smoke hooks' glfwGetKey) a key the game's automatic rhythm player holds now (testaid.cpp rhythmauto)
+extern "C" int ShSmokeAutoKey(int key)
+{
+	return FShRhythmAutoKey(key) ? 1 : 0;
 }

@@ -1,6 +1,7 @@
 #include "alo.h"
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/debugmenu.h"
+#include "safehouse/rhythmicons.h"
 #endif
 #include "hide.h"
 #include "render.h"
@@ -4338,6 +4339,9 @@ void RenderAloGlobset(ALO* palo, CM* pcm, RO* pro)
 		}
 
 		rpl.fTransluscentSort = sortT;
+#if defined(CANE_SAFEHOUSE)
+		ShRhythmNoteRpl(&rpl);   // (the rhythm minigame's notes as the device's buttons: safehouse/rhythmicons.h)
+#endif
 
 		if (!allSwDynamicLights.empty() && glob.fThreeWay == 1)
 			rpl.ro.fDynamicLight = FindSwDynamicLights(&posCenter, glob.sRadius);
@@ -4441,7 +4445,7 @@ void RenderAloGlobset(ALO* palo, CM* pcm, RO* pro)
 				}
 				rplCel.rocel.uAlphaCelBorder = cb;
 				rplCel.palo = palo;
-				rplCel.pglob = &glob;
+				rplCel.pglob = rpl.pglob;   // (the surface's glob: &glob, or SafeHouse's stand-in for it)
 
 				SubmitRplCel(&rplCel);
 			}
