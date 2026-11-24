@@ -6704,3 +6704,36 @@ int s_hvagAmbient = 0;
 IEXC g_iexcHyst = 0;
 int s_sfxidLast = 0;
 int g_fSneakyFeet = 0;
+
+#if defined(CANE_SAFEHOUSE)
+// --export-wav (safehouse/musmod.cpp): plays one .mus through the game's own music engine for `seconds`. The caller
+// points SDL's audio at its "disk" driver first, so the engine's output is captured to a file instead of heard.
+bool PlayMusicFileForCapture(const std::filesystem::path& path, double seconds)
+{
+	StartupSound();
+	InitializeSoundOptions();
+	{
+		std::lock_guard<std::recursive_mutex> lock(s_musicMutex);
+		UnloadMusic();
+		if (!LoadMusic989Mus(path) || !EnsureMusicEngine())
+		{
+			std::fprintf(stderr, "cannot load %s as a Sly 1 music bank\n", path.string().c_str());
+			ShutdownSound();
+			return false;
+		}
+		s_music989.registers = s_amRegisters;
+		s_musicStream.musid = static_cast<MUSID>(0);
+		s_musicStream.path = path;
+		s_musicStream.state = MusicState::Loaded;
+		QueueMusicSegment(0);
+		ActivateQueuedMusicSegments();
+		PrimeMusicSequencerStartup();
+		s_music989.lastUpdate = std::chrono::steady_clock::now();
+		s_musicStream.state = MusicState::Playing;
+		s_musicStream.paused = false;
+	}
+	std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+	ShutdownSound();
+	return true;
+}
+#endif

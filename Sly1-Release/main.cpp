@@ -15,6 +15,7 @@
 #include "blip.h"
 #include "content.h"
 #include "safehouse/mods.h"
+#include "safehouse/musmod.h"
 #if defined(CANE_SAFEHOUSE)
 #include "safehouse/prompt_glyphs.h"
 #endif
@@ -627,6 +628,9 @@ int RunApplication(const std::vector<std::string>& arguments)
     try
     {
 #if defined(CANE_SAFEHOUSE)
+		// (SafeHouse: the music tools need no game data, musmod.h)
+		if (const int musicResult = RunMusicTool(arguments); musicResult >= 0)
+			return musicResult;
 		// (SafeHouse: the mods' options, mods.h; a tool option runs instead of the game)
 		std::vector<std::string> runtimeArguments = arguments;
 		TakeModArguments(runtimeArguments);
