@@ -4,6 +4,7 @@
 // points, the key's collection, the autosave) and change the save only where a row says "[save]".
 #include "debugmenu.h"
 #include "skipcut.h"
+#include "testaid.h"
 #include "../Input.h"
 #include "../alo.h"
 #include "../blot.h"
@@ -689,6 +690,7 @@ void RunScript()
 			if (st.arg == "Levels") Push(PK_Worlds), Push(PK_Levels, 1);
 		}
 		else if (a == "down" && s_menu.top() != nullptr) ++s_menu.top()->isel;
+		else if (!ShTestStep(a, st.arg)) std::printf("debug menu: unknown test step %s\n", a.c_str());
 	}
 }
 
@@ -1032,6 +1034,7 @@ void ShUpdateDebugTools()
 	std::vector<std::function<void()>> apfn;
 	apfn.swap(s_apfnDeferred);
 	for (auto& pfn : apfn) pfn();
+	ShTestFrame();
 	const bool fOn = FDebug() || !Script().empty();
 	if (s_fInfinite)
 	{

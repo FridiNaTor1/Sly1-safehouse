@@ -16,7 +16,8 @@
 // Test aid: SAFEHOUSE_DEBUGMENU="ACTION@FRAME,..." runs menu actions at those frames (of the main loop), without Debug mode
 // too: open, close, noclip, freecam, hud, perf, labels, collision, triggers, warp=LEVELID (hex, 0x101), page=NAME
 // (the menu open on Warps, Unlock, Player, Overlays, Display, Teleport, Speed, Level), fly=X/Y/Z (noclip: the stick
-// and up / down held, -1..1), look=YAW/PITCH (free camera: degrees per second), speed=R.
+// and up / down held, -1..1), look=YAW/PITCH (free camera: degrees per second), speed=R; and testaid.cpp's steps
+// (tp, tpoid, chk, clues, objs, charm, watch).
 
 class SO;
 class ALO;
