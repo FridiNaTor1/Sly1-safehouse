@@ -34,6 +34,10 @@ void ShTouchRumble(int joystickId, uint8_t highSpeedMotor, uint8_t lowSpeedMotor
 #endif
 }
 
+// The on-screen pad shows its whole-screen hold (the skip, its B) only in a scene (Cinematic); everywhere else its B
+// is Circle, a game button, even while a skippable conversation plays.
+static bool s_touchCinematic = false;
+
 void ShUpdateTouchContext()
 {
 #if defined(CANE_IOS) || defined(__ANDROID__)
@@ -59,6 +63,12 @@ void ShUpdateTouchContext()
 		default:
 			break;
 		}
+	s_touchCinematic = context == TouchContext::Cinematic;
 	cane::mobile::setTouchContext(context);
 #endif
+}
+
+bool FShTouchCinematic()
+{
+	return s_touchCinematic;
 }

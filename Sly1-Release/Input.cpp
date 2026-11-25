@@ -771,7 +771,7 @@ void JOY::Update(GLFWwindow* window)
                 continue;
 #if defined(__ANDROID__) || defined(CANE_IOS)
             // (the on-screen pad's hold during a scene, its B, is the skip there: touch.cpp)
-            if (fSkipCaptured && activeJoystickId == GLFW_JOYSTICK_LAST && binding == GLFW_GAMEPAD_BUTTON_B)
+            if (fSkipCaptured && activeJoystickId == GLFW_JOYSTICK_LAST && binding == GLFW_GAMEPAD_BUTTON_B && FShTouchCinematic())
                 continue;
 #endif
             bool held = false;
@@ -825,7 +825,7 @@ void JOY::Update(GLFWwindow* window)
                 fSkip = fSkip || state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER] > 0.25f;
 #if defined(__ANDROID__) || defined(CANE_IOS)
             // (while the skip has its input: a scene, a movie, or the hold not yet released after a skip)
-            if (activeJoystickId == GLFW_JOYSTICK_LAST && fSkipCaptured)
+            if (activeJoystickId == GLFW_JOYSTICK_LAST && fSkipCaptured && FShTouchCinematic())
                 fSkip = fSkip || state.buttons[GLFW_GAMEPAD_BUTTON_B] == GLFW_PRESS;
 #endif
         }

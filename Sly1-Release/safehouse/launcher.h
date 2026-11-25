@@ -20,6 +20,8 @@ const std::string* ShArgument(const char* option);
 bool FShArgument(const char* option);
 // The touch pad's layout on iOS / Android (touch.cpp): each frame and each movie frame.
 void ShUpdateTouchContext();
+// True while the on-screen pad shows its whole-screen skip hold (a scene); its B is the skip only then (Input.cpp).
+bool FShTouchCinematic();
 // The rumble for the on-screen pad (the last GLFW gamepad on iOS / Android): the phone's own vibrator, the big motor as
 // its strength, kept up by ShUpdateTouchContext each frame. Nothing elsewhere.
 void ShTouchRumble(int joystickId, uint8_t highSpeedMotor, uint8_t lowSpeedMotor);
